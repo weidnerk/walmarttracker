@@ -32,10 +32,14 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="HtmlAgilityPack, Version=1.8.4.0, Culture=neutral, PublicKeyToken=bd319b19eaf3b43a, processorArchitecture=MSIL">
-      <HintPath>..\packages\HtmlAgilityPack.1.8.4\lib\Net45\HtmlAgilityPack.dll</HintPath>
+    <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <HintPath>..\packages\EntityFramework.6.2.0\lib\net45\EntityFramework.dll</HintPath>
+    </Reference>
+    <Reference Include="EntityFramework.SqlServer, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <HintPath>..\packages\EntityFramework.6.2.0\lib\net45\EntityFramework.SqlServer.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.ComponentModel.DataAnnotations" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -49,8 +53,28 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="App.config" />
+    <None Include="App.config">
+      <SubType>Designer</SubType>
+    </None>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\dsmodels\dsmodels\dsmodels.csproj">
+      <Project>{a34f18f9-50a8-4648-87a9-70743b810e71}</Project>
+      <Name>dsmodels</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\dsutil\dsutil.csproj">
+      <Project>{7fa17f92-860b-4367-ab69-a3a417a29a79}</Project>
+      <Name>dsutil</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\scraperAPI\scrapeAPI\scrapeAPI.csproj">
+      <Project>{3fb14d30-acd0-4e43-a607-3410524c3de3}</Project>
+      <Name>scrapeAPI</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\wallib\wallib\wallib.csproj">
+      <Project>{cd20dfe3-8d85-435a-a129-9319bc47a348}</Project>
+      <Name>wallib</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
