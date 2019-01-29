@@ -67,7 +67,7 @@
       <Project>{7fa17f92-860b-4367-ab69-a3a417a29a79}</Project>
       <Name>dsutil</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\scraperAPI\scrapeAPI\scrapeAPI.csproj">
+    <ProjectReference Include="..\..\scrapeAPI\scrapeAPI\scrapeAPI.csproj">
       <Project>{3fb14d30-acd0-4e43-a607-3410524c3de3}</Project>
       <Name>scrapeAPI</Name>
     </ProjectReference>
