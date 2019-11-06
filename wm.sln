@@ -11,7 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dsmodels", "..\dsmodels\dsm
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dsutil", "..\dsutil\dsutil.csproj", "{7FA17F92-860B-4367-AB69-A3A417A29A79}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "scrapeAPI", "..\scrapeAPI\scrapeAPI\scrapeAPI.csproj", "{3FB14D30-ACD0-4E43-A607-3410524C3DE3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "scrapeAPI", "..\scraperAPI\scrapeAPI\scrapeAPI.csproj", "{3FB14D30-ACD0-4E43-A607-3410524C3DE3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
