@@ -55,22 +55,22 @@ namespace wm
 
             foreach (Listing listing in walListings)
             {
+                var settings = new UserSettingsView();
+                if (listing.StoreID == 1)
+                {
+                    settings = db.UserSettingsView.Find(HOME_DECOR_USER_ID);
+                }
+                if (listing.StoreID == 4)
+                {
+                    settings = db.UserSettingsView.Find(EAGLE_USER_ID);
+                }
+
                 var w = await wallib.Class1.GetDetail(listing.SourceUrl);
                 Console.WriteLine((++i));
                 if (w == null)
                 {
-                    var settings = new UserSettingsView();
-                    if (listing.StoreID == 1)
-                    {
-                        settings = db.UserSettingsView.Find(HOME_DECOR_USER_ID);
-                    }
-                    if (listing.StoreID == 4)
-                    {
-                        settings = db.UserSettingsView.Find(EAGLE_USER_ID);
-                    }
-
-                    response = scrapeAPI.ebayAPIs.ReviseItem(settings, listing.ListedItemID, qty: 0);
-                    await db.UpdateOOS(listing.ListedItemID, true);
+                    //response = scrapeAPI.ebayAPIs.ReviseItem(settings, listing.ListedItemID, qty: 0);
+                    //await db.UpdateOOS(listing.ListedItemID, true);
 
                     Console.WriteLine(listing.Title);
                     ++outofstock;
@@ -82,8 +82,8 @@ namespace wm
                     //Console.WriteLine(w.Price);
                     if (w.OutOfStock)
                     {
-                        //response = scrapeAPI.ebayAPIs.ReviseItem(listing.ListedItemID, qty: 0);
-                        // await db.UpdateOOS(listing.ListedItemID, true);
+                        response = scrapeAPI.ebayAPIs.ReviseItem(settings, listing.ListedItemID, qty: 0);
+                        await db.UpdateOOS(listing.ListedItemID, true);
                         Console.WriteLine(listing.Title);
                         Console.WriteLine("OOS");
                         Console.WriteLine("");
