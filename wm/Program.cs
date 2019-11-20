@@ -5,9 +5,9 @@
  * 
  */
 using dsmodels;
-using scrapeAPI.Controllers;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -24,16 +24,11 @@ namespace wm
 
         static void Main(string[] args)
         {
-            //string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "test email ", "revise listing");
-            //if (!string.IsNullOrEmpty(ret))
-            //{
-            //    Console.WriteLine(ret);
-            //}
-
+            string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
             int outofstock = 0;
             Task.Run(async () =>
             {
-                outofstock = await ScanItems();
+                outofstock = await ScanItems(connStr, 1);
 
             }).Wait();
 
@@ -41,7 +36,7 @@ namespace wm
             //Console.ReadKey();
         }
 
-        public static async Task<int> ScanItems()
+        public static async Task<int> ScanItems(string connStr, int storeID)
         {
             int i = 0;
             int outofstock = 0;
@@ -51,42 +46,36 @@ namespace wm
             string body = null;
             string oosBody = null;
 
-            var walListings = db.Listings.Where(x => x.SourceID == 1 && !x.OOS && x.Listed != null).ToList();
+            var settings = new UserSettingsView();
+            if (storeID == 1)
+            {
+                settings = db.GetUserSettings(connStr, HOME_DECOR_USER_ID);
+            }
+            if (storeID == 4)
+            {
+                settings = db.GetUserSettings(connStr, EAGLE_USER_ID);
+            }
+            var walListings = db.Listings.Where(x => x.SourceID == 1 && !x.OOS && x.Listed != null && x.StoreID == storeID).ToList();
 
             foreach (Listing listing in walListings)
             {
-                var settings = new UserSettingsView();
-                if (listing.StoreID == 1)
-                {
-                    settings = db.UserSettingsView.Find(HOME_DECOR_USER_ID);
-                }
-                if (listing.StoreID == 4)
-                {
-                    settings = db.UserSettingsView.Find(EAGLE_USER_ID);
-                }
-
-                var w = await wallib.Class1.GetDetail(listing.SourceUrl);
-                Console.WriteLine((++i));
-                if (w == null)
+                var wmItem = await wallib.Class1.GetDetail(listing.SourceUrl);
+                Console.WriteLine((++i) + " " + listing.Title);
+                if (wmItem == null)  // could not fetch from walmart website
                 {
                     //response = scrapeAPI.ebayAPIs.ReviseItem(settings, listing.ListedItemID, qty: 0);
                     //await db.UpdateOOS(listing.ListedItemID, true);
 
                     Console.WriteLine(listing.Title);
                     ++outofstock;
-                    //string ret = await dsutil.DSUtil.SendMailProd("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing", "localhost");
                     string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "INVALID URL " + listing.Title, "revise listing");
                 }
                 else
                 {
-                    //Console.WriteLine(w.Price);
-                    if (w.OutOfStock)
+                    if (wmItem.OutOfStock)
                     {
-                        response = scrapeAPI.ebayAPIs.ReviseItem(settings, listing.ListedItemID, qty: 0);
+                        response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, qty: 0);
                         await db.UpdateOOS(listing.ListedItemID, true);
-                        Console.WriteLine(listing.Title);
-                        Console.WriteLine("OOS");
-                        Console.WriteLine("");
                         ++outofstock;
 
                         oosBody += "<br/><br/>" + listing.Title;
@@ -94,17 +83,17 @@ namespace wm
                         //string ret = await dsutil.DSUtil.SendMailProd("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing", "localhost");
                         //string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing");
                     }
-                    if (w.Price != listing.SupplierPrice)
+                    if (wmItem.Price != listing.SupplierPrice)
                     {
-                        decimal oldPrice = Math.Round(listing.ListingPrice, 2);
-                        //response = scrapeAPI.ebayAPIs.ReviseItem(listing.ListedItemID, price: (double)newPrice);
-                        // await db.UpdatePrice(listing, (decimal)newPrice, w.Price);
+                        decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.Price);
+                        response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, price: (double)newPrice);
+                        await db.UpdatePrice(listing, (decimal)newPrice, wmItem.Price);
 
                         ++mispriceings;
                         body += "<br/><br/>" + "<b>" + listing.Title + "</b>";
-                        body += "<br/><br/>" + listing.ListedItemID + " db supplier price " + listing.SupplierPrice.ToString("c") + " different from just captured " + w.Price.ToString("c");
-                        // Console.WriteLine(body);
-                        if (w.Price < listing.SupplierPrice)
+                        body += "<br/><br/>" + listing.ListedItemID + " db supplier price " + listing.SupplierPrice.ToString("c") + " different from just captured " + wmItem.Price.ToString("c");
+                        
+                        if (wmItem.Price < listing.SupplierPrice)
                         {
                             body += "<br/>Supplier dropped their price.";
                         }
@@ -112,15 +101,10 @@ namespace wm
                         {
                             body += "<br/>Supplier INCREASED their price!";
                         }
-                        //Console.WriteLine(listing.Title);
-                        Console.WriteLine(body);
-                        Console.WriteLine("");
                         dsutil.DSUtil.WriteFile(_logfile, body, log_username);
                         body += "<br/><br/>";
-                        // body += listing.SourceUrl;
-                        // string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "PRICE CHANGE " + listing.Title, body);
                     }
-                    if (w.ShippingNotAvailable)
+                    if (wmItem.ShippingNotAvailable)
                     {
                         //response = scrapeAPI.ebayAPIs.ReviseItem(listing.ListedItemID, qty: 0);
                         //await db.UpdateOOS(listing.ListedItemID, true);
@@ -132,10 +116,10 @@ namespace wm
                     }
                 }
             }
-            if (!string.IsNullOrEmpty(body))
+            if (mispriceings > 0)
             {
                 string title = "PRICE CHANGE ";
-                if (!string.IsNullOrEmpty(oosBody))
+                if (outofstock > 0)
                 {
                     oosBody = "<br/><br/>" + "<b>OUT OF STOCK</b>" + "<br/>" + oosBody;
                     body += oosBody;
@@ -145,22 +129,23 @@ namespace wm
             }
             else
             {
-                if (!string.IsNullOrEmpty(oosBody))
+                if (outofstock > 0)
                 {
                     oosBody += "<br/><br/>" + "OUT OF STOCK" + "<br/><br/> " + oosBody;
+                    string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "OUT OF STOCK ", oosBody);
                 }
-                string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "OUT OF STOCK ", oosBody);
+            }
+            if (mispriceings == 0 && outofstock == 0)
+            {
+                string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "WM TRACKER", "No discrepencies found.");
             }
             string msg = "Found " + outofstock.ToString() + " out of stock";
-            Console.WriteLine(msg);
             dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
 
             msg = "Found " + mispriceings.ToString() + " mispricings";
-            Console.WriteLine(msg);
             dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
 
             msg = "Found " + shippingNotAvailable.ToString() + " shippingNotAvailable";
-            Console.WriteLine(msg);
             dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
 
             return outofstock;

@@ -56,6 +56,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.ComponentModel.DataAnnotations" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -83,9 +84,9 @@
       <Project>{7fa17f92-860b-4367-ab69-a3a417a29a79}</Project>
       <Name>dsutil</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\scraperAPI\scrapeAPI\scrapeAPI.csproj">
-      <Project>{3fb14d30-acd0-4e43-a607-3410524c3de3}</Project>
-      <Name>scrapeAPI</Name>
+    <ProjectReference Include="..\..\eBayUtility\eBayUtility\eBayUtility.csproj">
+      <Project>{7aba8bc4-5b6e-4a74-8a14-56fb96abbdaf}</Project>
+      <Name>eBayUtility</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\wallib\wallib\wallib.csproj">
       <Project>{cd20dfe3-8d85-435a-a129-9319bc47a348}</Project>
