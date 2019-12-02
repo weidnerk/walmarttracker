@@ -62,7 +62,7 @@ namespace wm
 
                 foreach (Listing listing in walListings)
                 {
-                    var wmItem = await wallib.Class1.GetDetail(listing.SourceUrl);
+                    var wmItem = await wallib.wmUtility.GetDetail(listing.SourceUrl);
                     Console.WriteLine((++i) + " " + listing.SellerListing.Title);
                     if (wmItem == null)  // could not fetch from walmart website
                     {
@@ -88,7 +88,7 @@ namespace wm
                         }
                         if (wmItem.Price != listing.SupplierPrice)
                         {
-                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.Price);
+                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.Price, 5);
                             response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, price: (double)newPrice);
                             await db.UpdatePrice(listing, (decimal)newPrice, wmItem.Price);
 
