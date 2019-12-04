@@ -78,7 +78,7 @@ namespace wm
                         if (wmItem.OutOfStock)
                         {
                             response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, qty: 0);
-                            await db.UpdateOOS(listing.ListedItemID, true);
+                            await db.OOSUpdate(listing.ListedItemID, true);
                             ++outofstock;
 
                             oosBody += "<br/><br/>" + listing.SellerListing.Title;
