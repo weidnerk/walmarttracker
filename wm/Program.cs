@@ -58,7 +58,7 @@ namespace wm
                 {
                     settings = db.GetUserSettings(connStr, EAGLE_USER_ID);
                 }
-                var walListings = db.Listings.Include(c => c.SellerListing).Where(x => x.SourceID == 1 && !x.OOS && x.Listed != null && x.StoreID == storeID).ToList();
+                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SourceID == 1 && !x.OOS && x.Listed != null && x.StoreID == storeID).ToList();
 
                 foreach (Listing listing in walListings)
                 {
@@ -86,7 +86,7 @@ namespace wm
                             //string ret = await dsutil.DSUtil.SendMailProd("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing", "localhost");
                             //string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing");
                         }
-                        if (wmItem.SupplierPrice != listing.SupplierPrice)
+                        if (wmItem.SupplierPrice != listing.SupplierItem.SupplierPrice)
                         {
                             decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, 5);
                             response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, price: (double)newPrice);
@@ -94,9 +94,9 @@ namespace wm
 
                             ++mispriceings;
                             body += "<br/><br/>" + "<b>" + listing.SellerListing.Title + "</b>";
-                            body += "<br/><br/>" + listing.ListedItemID + " db supplier price " + listing.SupplierPrice.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
+                            body += "<br/><br/>" + listing.ListedItemID + " db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
 
-                            if (wmItem.SupplierPrice < listing.SupplierPrice)
+                            if (wmItem.SupplierPrice < listing.SupplierItem.SupplierPrice)
                             {
                                 body += "<br/>Supplier dropped their price.";
                             }
