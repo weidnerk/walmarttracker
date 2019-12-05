@@ -86,17 +86,17 @@ namespace wm
                             //string ret = await dsutil.DSUtil.SendMailProd("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing", "localhost");
                             //string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing");
                         }
-                        if (wmItem.Price != listing.SupplierPrice)
+                        if (wmItem.SupplierPrice != listing.SupplierPrice)
                         {
-                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.Price, 5);
+                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, 5);
                             response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, price: (double)newPrice);
-                            await db.UpdatePrice(listing, (decimal)newPrice, wmItem.Price);
+                            await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
 
                             ++mispriceings;
                             body += "<br/><br/>" + "<b>" + listing.SellerListing.Title + "</b>";
-                            body += "<br/><br/>" + listing.ListedItemID + " db supplier price " + listing.SupplierPrice.ToString("c") + " different from just captured " + wmItem.Price.ToString("c");
+                            body += "<br/><br/>" + listing.ListedItemID + " db supplier price " + listing.SupplierPrice.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
 
-                            if (wmItem.Price < listing.SupplierPrice)
+                            if (wmItem.SupplierPrice < listing.SupplierPrice)
                             {
                                 body += "<br/>Supplier dropped their price.";
                             }
