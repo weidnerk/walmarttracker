@@ -17,7 +17,7 @@ namespace wm
     class Program
     {
         static DataModelsDB db = new DataModelsDB();
-        readonly static string _logfile = "scrape_log.txt";
+        readonly static string _logfile = "log.txt";
         const string log_username = "admin";
 
         readonly static string HOME_DECOR_USER_ID = "65e09eec-a014-4526-a569-9f2d3600aa89";
