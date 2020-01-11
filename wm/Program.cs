@@ -58,7 +58,7 @@ namespace wm
                 {
                     settings = db.GetUserSettings(connStr, EAGLE_USER_ID);
                 }
-                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SourceID == 1 && !x.OOS && x.Listed != null && x.StoreID == storeID).ToList();
+                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SupplierItem.SourceID == 1 && !x.OOS && x.Listed != null && x.StoreID == storeID).ToList();
 
                 foreach (Listing listing in walListings)
                 {
