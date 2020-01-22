@@ -20,21 +20,30 @@ namespace wm
         readonly static string _logfile = "log.txt";
         const string log_username = "admin";
 
+        // My ID is used for the tracker.
         readonly static string HOME_DECOR_USER_ID = "65e09eec-a014-4526-a569-9f2d3600aa89";
-        readonly static string EAGLE_USER_ID = "56aba33d-b046-41fb-b647-5bb42174a58b";
 
         static void Main(string[] args)
         {
-            string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
-            int outofstock = 0;
-            Task.Run(async () =>
+            int storeID;
+            if (args.Length != 1)
             {
-                outofstock = await ScanItems(connStr, 1);
+                Console.WriteLine("Invalid arguments.");
+            }
+            else
+            {
+                storeID = Convert.ToInt32(args[0]);
+                string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
+                int outofstock = 0;
+                Task.Run(async () =>
+                {
+                    outofstock = await ScanItems(connStr, storeID);
 
-            }).Wait();
+                }).Wait();
 
-            //Console.WriteLine("press any key to continue...");
-            //Console.ReadKey();
+                    //Console.WriteLine("press any key to continue...");
+                    //Console.ReadKey();
+            }
         }
 
         public static async Task<int> ScanItems(string connStr, int storeID)
@@ -49,16 +58,8 @@ namespace wm
 
             try
             {
-                var settings = new UserSettingsView();
-                if (storeID == 1)
-                {
-                    settings = db.GetUserSettings(connStr, HOME_DECOR_USER_ID);
-                }
-                if (storeID == 4)
-                {
-                    settings = db.GetUserSettings(connStr, EAGLE_USER_ID);
-                }
-                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SupplierItem.SourceID == 1 && !x.OOS && x.Listed != null && x.StoreID == storeID).ToList();
+                string token = db.GetToken(storeID);
+                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SupplierItem.SourceID == 1 && x.Qty > 0 && x.Listed != null && x.StoreID == storeID).ToList();
 
                 foreach (Listing listing in walListings)
                 {
@@ -77,8 +78,8 @@ namespace wm
                     {
                         if (wmItem.OutOfStock)
                         {
-                            response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, qty: 0);
-                            await db.OOSUpdate(listing.ListedItemID, true);
+                            response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                            await db.ListingSaveAsync(listing, HOME_DECOR_USER_ID, "Qty");
                             ++outofstock;
 
                             oosBody += "<br/><br/>" + listing.SellerListing.Title;
@@ -89,7 +90,7 @@ namespace wm
                         if (wmItem.SupplierPrice != listing.SupplierItem.SupplierPrice)
                         {
                             decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, 5);
-                            response = Utility.eBayItem.ReviseItem(settings, listing.ListedItemID, price: (double)newPrice);
+                            response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                             await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
 
                             ++mispriceings;
