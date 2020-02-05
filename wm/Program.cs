@@ -63,7 +63,7 @@ namespace wm
 
                 foreach (Listing listing in walListings)
                 {
-                    var wmItem = await wallib.wmUtility.GetDetail(listing.SourceUrl);
+                    var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL);
                     Console.WriteLine((++i) + " " + listing.SellerListing.Title);
                     if (wmItem == null)  // could not fetch from walmart website
                     {
