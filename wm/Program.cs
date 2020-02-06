@@ -18,6 +18,8 @@ namespace wm
     {
         static string _toEmail = "ventures2019@gmail.com";
         static int _sourceID = 1;
+        static double _ptcProfit = 5;
+
         static DataModelsDB db = new DataModelsDB();
         readonly static string _logfile = "log.txt";
         const string log_username = "admin";
@@ -42,9 +44,6 @@ namespace wm
                     outofstock = await ScanItems(connStr, storeID, _sourceID);
 
                 }).Wait();
-
-                    //Console.WriteLine("press any key to continue...");
-                    //Console.ReadKey();
             }
         }
 
@@ -91,7 +90,7 @@ namespace wm
                         }
                         if (wmItem.SupplierPrice != listing.SupplierItem.SupplierPrice)
                         {
-                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, 5);
+                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, _ptcProfit);
                             response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                             await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
 
