@@ -16,6 +16,8 @@ namespace wm
 {
     class Program
     {
+        static string _toEmail = "ventures2019@gmail.com";
+        static int _sourceID = 1;
         static DataModelsDB db = new DataModelsDB();
         readonly static string _logfile = "log.txt";
         const string log_username = "admin";
@@ -37,7 +39,7 @@ namespace wm
                 int outofstock = 0;
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(connStr, storeID);
+                    outofstock = await ScanItems(connStr, storeID, _sourceID);
 
                 }).Wait();
 
@@ -46,7 +48,7 @@ namespace wm
             }
         }
 
-        public static async Task<int> ScanItems(string connStr, int storeID)
+        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID)
         {
             int i = 0;
             int outofstock = 0;
@@ -59,7 +61,7 @@ namespace wm
             try
             {
                 string token = db.GetToken(storeID);
-                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SupplierItem.SourceID == 1 && x.Qty > 0 && x.Listed != null && x.StoreID == storeID).ToList();
+                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SupplierItem.SourceID == sourceID && x.Qty > 0 && x.Listed != null && x.StoreID == storeID).ToList();
 
                 foreach (Listing listing in walListings)
                 {
@@ -72,7 +74,7 @@ namespace wm
 
                         Console.WriteLine(listing.SellerListing.Title);
                         ++outofstock;
-                        string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "INVALID URL " + listing.SellerListing.Title, "revise listing");
+                        string ret = dsutil.DSUtil.SendMailDev(_toEmail, "INVALID URL " + listing.SellerListing.Title, "revise listing");
                     }
                     else
                     {
@@ -129,19 +131,19 @@ namespace wm
                         body += oosBody;
                         title += "/OUT OF STOCK";
                     }
-                    string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", title, body);
+                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, title, body);
                 }
                 else
                 {
                     if (outofstock > 0)
                     {
                         oosBody += "<br/><br/>" + "OUT OF STOCK" + "<br/><br/> " + oosBody;
-                        string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "OUT OF STOCK ", oosBody);
+                        string ret = dsutil.DSUtil.SendMailDev(_toEmail, "OUT OF STOCK ", oosBody);
                     }
                 }
                 if (mispriceings == 0 && outofstock == 0)
                 {
-                    string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "WM TRACKER", "No discrepencies found.");
+                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, "WM TRACKER", "No discrepencies found.");
                 }
                 string msg = "Found " + outofstock.ToString() + " out of stock";
                 dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
