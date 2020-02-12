@@ -18,7 +18,7 @@ namespace wm
     {
         static string _toEmail = "ventures2019@gmail.com";
         static int _sourceID = 1;
-        static double _ptcProfit = 5;
+        //static double _ptcProfit = 5;
 
         static DataModelsDB db = new DataModelsDB();
         readonly static string _logfile = "log.txt";
@@ -38,16 +38,17 @@ namespace wm
             {
                 storeID = Convert.ToInt32(args[0]);
                 string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
+                var pctProfit = Convert.ToDouble(db.GetAppSetting("pctProfit"));
                 int outofstock = 0;
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(connStr, storeID, _sourceID);
+                    outofstock = await ScanItems(connStr, storeID, _sourceID, pctProfit);
 
                 }).Wait();
             }
         }
 
-        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID)
+        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID, double pctProfit)
         {
             int i = 0;
             int outofstock = 0;
@@ -90,7 +91,7 @@ namespace wm
                         }
                         if (wmItem.SupplierPrice != listing.SupplierItem.SupplierPrice)
                         {
-                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, _ptcProfit);
+                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit);
                             response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                             await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
 
