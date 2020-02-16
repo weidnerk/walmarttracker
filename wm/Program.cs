@@ -91,7 +91,8 @@ namespace wm
                         }
                         if (wmItem.SupplierPrice != listing.SupplierItem.SupplierPrice)
                         {
-                            decimal newPrice = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit);
+                            var priceProfit = Utility.eBayItem.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit);
+                            decimal newPrice = priceProfit.ProposePrice;
                             response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                             await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
 
