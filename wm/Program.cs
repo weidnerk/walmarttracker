@@ -145,6 +145,10 @@ namespace wm
                 if (mispriceings == 0 && outofstock == 0)
                 {
                     string ret = dsutil.DSUtil.SendMailDev(_toEmail, "WM TRACKER", "No discrepencies found.");
+                    if (!string.IsNullOrEmpty(ret))
+                    {
+                        dsutil.DSUtil.WriteFile(_logfile, "SendMailDev return: " + ret, log_username);
+                    }
                 }
                 string msg = "Found " + outofstock.ToString() + " out of stock";
                 dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
