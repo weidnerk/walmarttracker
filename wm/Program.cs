@@ -41,16 +41,18 @@ namespace wm
                 var pctProfit = Convert.ToDouble(db.GetAppSetting("pctProfit"));
                 var wmShipping = Convert.ToDecimal(db.GetAppSetting("Walmart shipping"));
                 var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting("Walmart free shipping min"));
+                var eBayPct = Convert.ToDouble(db.GetAppSetting("eBay pct"));
+
                 int outofstock = 0;
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(connStr, storeID, _sourceID, pctProfit, wmShipping, wmFreeShippingMin);
+                    outofstock = await ScanItems(connStr, storeID, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
 
                 }).Wait();
             }
         }
 
-        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID, double pctProfit, decimal wmShipping, decimal wmFreeShippingMin)
+        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID, double pctProfit, decimal wmShipping, decimal wmFreeShippingMin, double eBayPct)
         {
             int i = 0;
             int outofstock = 0;
@@ -93,7 +95,7 @@ namespace wm
                         }
                         if (wmItem.SupplierPrice != listing.SupplierItem.SupplierPrice)
                         {
-                            var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin);
+                            var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
                             decimal newPrice = priceProfit.ProposePrice;
                             response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                             await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
