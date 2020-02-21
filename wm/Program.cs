@@ -42,17 +42,18 @@ namespace wm
                 var wmShipping = Convert.ToDecimal(db.GetAppSetting("Walmart shipping"));
                 var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting("Walmart free shipping min"));
                 var eBayPct = Convert.ToDouble(db.GetAppSetting("eBay pct"));
+                int imgLimit = Convert.ToInt32(db.GetAppSetting("Listing Image Limit"));
 
                 int outofstock = 0;
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(connStr, storeID, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
+                    outofstock = await ScanItems(connStr, storeID, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit);
 
                 }).Wait();
             }
         }
 
-        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID, double pctProfit, decimal wmShipping, decimal wmFreeShippingMin, double eBayPct)
+        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID, double pctProfit, decimal wmShipping, decimal wmFreeShippingMin, double eBayPct, int imgLimit)
         {
             int i = 0;
             int outofstock = 0;
@@ -69,7 +70,7 @@ namespace wm
 
                 foreach (Listing listing in walListings)
                 {
-                    var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL);
+                    var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit);
                     Console.WriteLine((++i) + " " + listing.SellerListing.Title);
                     if (wmItem == null)  // could not fetch from walmart website
                     {
