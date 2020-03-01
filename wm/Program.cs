@@ -26,6 +26,7 @@ namespace wm
 
         // My ID is used for the tracker.
         readonly static string HOME_DECOR_USER_ID = "65e09eec-a014-4526-a569-9f2d3600aa89";
+        readonly static string EAGLE_USER_ID = "56aba33d-b046-41fb-b647-5bb42174a58b";
 
         static void Main(string[] args)
         {
@@ -37,7 +38,9 @@ namespace wm
             else
             {
                 storeID = Convert.ToInt32(args[0]);
+                string userID = UserID(storeID);
                 string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
+                var settings = db.GetUserSettingsView(connStr, userID);
                 var pctProfit = Convert.ToDouble(db.GetAppSetting("pctProfit"));
                 var wmShipping = Convert.ToDecimal(db.GetAppSetting("Walmart shipping"));
                 var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting("Walmart free shipping min"));
@@ -47,13 +50,27 @@ namespace wm
                 int outofstock = 0;
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(connStr, storeID, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit);
+                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit);
 
                 }).Wait();
             }
         }
+        protected static string UserID(int storeID)
+        {
+            string userID = null;
+            switch (storeID)
+            {
+                case 1:
+                    userID = HOME_DECOR_USER_ID;
+                    break;
+                case 4:
+                    userID = EAGLE_USER_ID;
+                    break;
+            }
+            return userID;
+        }
 
-        public static async Task<int> ScanItems(string connStr, int storeID, int sourceID, double pctProfit, decimal wmShipping, decimal wmFreeShippingMin, double eBayPct, int imgLimit)
+        public static async Task<int> ScanItems(UserSettingsView settings, int sourceID, double pctProfit, decimal wmShipping, decimal wmFreeShippingMin, double eBayPct, int imgLimit)
         {
             int i = 0;
             int outofstock = 0;
@@ -65,8 +82,8 @@ namespace wm
 
             try
             {
-                string token = db.GetToken(storeID);
-                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SupplierItem.SourceID == sourceID && x.Qty > 0 && x.Listed != null && x.StoreID == storeID).ToList();
+                string token = db.GetToken(settings);
+                var walListings = db.Listings.Include(c => c.SellerListing).Include(d => d.SupplierItem).Where(x => x.SupplierItem.SourceID == sourceID && x.Qty > 0 && x.Listed != null && x.StoreID == settings.StoreID).ToList();
 
                 foreach (Listing listing in walListings)
                 {
@@ -86,7 +103,7 @@ namespace wm
                         if (wmItem.OutOfStock)
                         {
                             response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                            await db.ListingSaveAsync(listing, HOME_DECOR_USER_ID, "Qty");
+                            await db.ListingSaveAsync(listing, settings.UserID, "Qty");
                             ++outofstock;
 
                             oosBody += "<br/><br/>" + listing.SellerListing.Title;
