@@ -70,15 +70,29 @@ namespace wm
             return userID;
         }
 
-        public static async Task<int> ScanItems(UserSettingsView settings, int sourceID, double pctProfit, decimal wmShipping, decimal wmFreeShippingMin, double eBayPct, int imgLimit)
+        public static async Task<int> ScanItems(UserSettingsView settings, 
+            int sourceID, 
+            double pctProfit, 
+            decimal wmShipping, 
+            decimal wmFreeShippingMin, 
+            double eBayPct, 
+            int imgLimit)
         {
             int i = 0;
             int outofstock = 0;
+            int invalidURL = 0;
             int shippingNotAvailable = 0;
             int mispriceings = 0;
+            int numErrors = 0;
             var response = new List<string>();
             string body = null;
-            string oosBody = null;
+            int listingID = 0;
+
+            var outofStockList = new List<string>();
+            var priceChangeList = new List<string>();
+            var shipNotAvailList = new List<string>();
+            var invalidURLList = new List<string>();
+            var errors = new List<string>();
 
             try
             {
@@ -87,106 +101,120 @@ namespace wm
 
                 foreach (Listing listing in walListings)
                 {
-                    var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit);
-                    Console.WriteLine((++i) + " " + listing.SellerListing.Title);
-                    if (wmItem == null)  // could not fetch from walmart website
+                    try
                     {
-                        //response = scrapeAPI.ebayAPIs.ReviseItem(settings, listing.ListedItemID, qty: 0);
-                        //await db.UpdateOOS(listing.ListedItemID, true);
+                        listingID = listing.ID;
 
-                        Console.WriteLine(listing.SellerListing.Title);
-                        ++outofstock;
-                        string ret = dsutil.DSUtil.SendMailDev(_toEmail, "INVALID URL " + listing.SellerListing.Title, "revise listing");
-                    }
-                    else
-                    {
-                        if (wmItem.OutOfStock)
+                        var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit);
+                        Console.WriteLine((++i) + " " + listing.SellerListing.Title);
+                        if (wmItem == null)  // could not fetch from walmart website
                         {
-                            response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                            await db.ListingSaveAsync(listing, settings.UserID, "Qty");
-                            ++outofstock;
+                            invalidURLList.Add(listing.ListingTitle);
 
-                            oosBody += "<br/><br/>" + listing.SellerListing.Title;
-
-                            //string ret = await dsutil.DSUtil.SendMailProd("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing", "localhost");
-                            //string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing");
+                            Console.WriteLine(listing.ListingTitle);
+                            ++invalidURL;
                         }
-                        if (wmItem.SupplierPrice != listing.SupplierItem.SupplierPrice)
+                        else
                         {
-                            var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
-                            decimal newPrice = priceProfit.ProposePrice;
-                            response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
-                            await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
-
-                            ++mispriceings;
-                            body += "<br/><br/>" + "<b>" + listing.SellerListing.Title + "</b>";
-                            body += "<br/><br/>" + listing.ListedItemID + " db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
-
-                            if (wmItem.SupplierPrice < listing.SupplierItem.SupplierPrice)
+                            if (wmItem.OutOfStock)
                             {
-                                body += "<br/>Supplier dropped their price.";
+                                outofStockList.Add(listing.ListingTitle);
+                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                listing.Qty = 0;
+                                await db.ListingSaveAsync(listing, settings.UserID, "Qty");
+                                ++outofstock;
                             }
                             else
                             {
-                                body += "<br/>Supplier INCREASED their price!";
+                                if (Math.Round(wmItem.SupplierPrice.Value, 2) != Math.Round(listing.SupplierItem.SupplierPrice.Value, 2))
+                                {
+                                    priceChangeList.Add(listing.ListingTitle);
+                                    var str = listing.ListedItemID + " db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
+                                    priceChangeList.Add(str);
+
+                                    if (wmItem.SupplierPrice < listing.SupplierItem.SupplierPrice)
+                                    {
+                                        str = "Supplier dropped their price.";
+                                        priceChangeList.Add(str);
+                                    }
+                                    else
+                                    {
+                                        str = "Supplier INCREASED their price!";
+                                        priceChangeList.Add(str);
+                                    }
+                                    dsutil.DSUtil.WriteFile(_logfile, body, log_username);
+
+                                    var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
+                                    decimal newPrice = priceProfit.ProposePrice;
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
+                                    await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
+
+                                    ++mispriceings;
+
+                                }
+                                if (wmItem.ShippingNotAvailable)
+                                {
+                                    shipNotAvailList.Add(listing.ListingTitle);
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                    listing.Qty = 0;
+                                    await db.ListingSaveAsync(listing, settings.UserID, "Qty");
+
+                                    ++shippingNotAvailable;
+                                }
                             }
-                            dsutil.DSUtil.WriteFile(_logfile, body, log_username);
-                            body += "<br/><br/>";
                         }
-                        if (wmItem.ShippingNotAvailable)
-                        {
-                            //response = scrapeAPI.ebayAPIs.ReviseItem(listing.ListedItemID, qty: 0);
-                            //await db.UpdateOOS(listing.ListedItemID, true);
-                            Console.WriteLine(listing.SellerListing.Title);
-                            Console.WriteLine("ShippingNotAvailable");
-                            ++shippingNotAvailable;
-                            //string ret = await dsutil.DSUtil.SendMailProd("ventures2019@gmail.com", "OUT OF STO " + listing.Title, "revise listing", "localhost");
-                            //string ret = dsutil.DSUtil.SendMailDev("ventures2019@gmail.com", "Shipping Not Available " + listing.Title, "revise listing");
-                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        ++numErrors;
+                        string msg = "ERROR IN LOOP listingID: " + listingID + " -> " + exc.Message;
+                        errors.Add(msg);
+                        dsutil.DSUtil.WriteFile(_logfile, msg, "");
                     }
                 }
                 if (mispriceings > 0)
                 {
-                    string title = "PRICE CHANGE ";
-                    if (outofstock > 0)
-                    {
-                        oosBody = "<br/><br/>" + "<b>OUT OF STOCK</b>" + "<br/>" + oosBody;
-                        body += oosBody;
-                        title += "/OUT OF STOCK";
-                    }
-                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, title, body);
+                    SendAlertEmail(_toEmail, "PRICE CHANGE", priceChangeList);
                 }
-                else
+                if (outofstock > 0)
                 {
-                    if (outofstock > 0)
-                    {
-                        oosBody += "<br/><br/>" + "OUT OF STOCK" + "<br/><br/> " + oosBody;
-                        string ret = dsutil.DSUtil.SendMailDev(_toEmail, "OUT OF STOCK ", oosBody);
-                    }
+                    SendAlertEmail(_toEmail, "OUT OF STOCK", outofStockList);
                 }
-                if (mispriceings == 0 && outofstock == 0)
+                if (invalidURL > 0)
                 {
-                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, "WM TRACKER", "No discrepencies found.");
-                    if (!string.IsNullOrEmpty(ret))
-                    {
-                        dsutil.DSUtil.WriteFile(_logfile, "SendMailDev return: " + ret, log_username);
-                    }
+                    SendAlertEmail(_toEmail, "INVALID URL", invalidURLList);
                 }
-                string msg = "Found " + outofstock.ToString() + " out of stock";
-                dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
-
-                msg = "Found " + mispriceings.ToString() + " mispricings";
-                dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
-
-                msg = "Found " + shippingNotAvailable.ToString() + " shippingNotAvailable";
-                dsutil.DSUtil.WriteFile(_logfile, msg, log_username);
-
+                if (shippingNotAvailable > 0)
+                {
+                    SendAlertEmail(_toEmail, "SHIPPING NOT AVAILABLE", shipNotAvailList);
+                }
+                if (numErrors > 0)
+                {
+                    SendAlertEmail(_toEmail, "TRACKER ERRORS", errors);
+                }
+                if (mispriceings + outofstock + invalidURL + shippingNotAvailable + numErrors == 0)
+                {
+                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, "REPRICER", "No issues found.");
+                }
                 return outofstock;
             }
             catch(Exception exc)
             {
-                string msg = exc.Message;
+                string msg = "listingID: " + listingID + " -> " + exc.Message;
+                dsutil.DSUtil.WriteFile(_logfile, msg, "");
                 return outofstock;
+            }
+        }
+
+        protected static void SendAlertEmail(string toEmail, string title, List<string> titles)
+        {
+            string body = null;
+            foreach (string s in titles)
+            {
+                body += s + "<br/>";
+            }
+            if (!string.IsNullOrEmpty(body)) { 
+                string ret = dsutil.DSUtil.SendMailDev(toEmail, title, body);
             }
         }
     }
