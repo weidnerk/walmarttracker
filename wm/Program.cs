@@ -104,6 +104,10 @@ namespace wm
                     try
                     {
                         listingID = listing.ID;
+                        //if (listingID == 1193)
+                        //{
+                        //    int stop = 99;
+                        //}
 
                         var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit);
                         Console.WriteLine((++i) + " " + listing.SellerListing.Title);
@@ -121,7 +125,7 @@ namespace wm
                                 outofStockList.Add(listing.ListingTitle);
                                 response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 listing.Qty = 0;
-                                await db.ListingSaveAsync(listing, settings.UserID, "Qty");
+                                await db.ListingSaveAsync(settings, listing, "Qty");
                                 ++outofstock;
                             }
                             else
@@ -157,7 +161,7 @@ namespace wm
                                     shipNotAvailList.Add(listing.ListingTitle);
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(listing, settings.UserID, "Qty");
+                                    await db.ListingSaveAsync(settings, listing, "Qty");
 
                                     ++shippingNotAvailable;
                                 }
