@@ -55,6 +55,12 @@ namespace wm
                 }).Wait();
             }
         }
+
+        /// <summary>
+        /// Return the user's GUID for a store for user=admin.
+        /// </summary>
+        /// <param name="storeID"></param>
+        /// <returns></returns>
         protected static string UserID(int storeID)
         {
             string userID = null;
@@ -70,6 +76,17 @@ namespace wm
             return userID;
         }
 
+        /// <summary>
+        /// Main driver to scan listings for issues.
+        /// </summary>
+        /// <param name="settings"></param>
+        /// <param name="sourceID"></param>
+        /// <param name="pctProfit"></param>
+        /// <param name="wmShipping"></param>
+        /// <param name="wmFreeShippingMin"></param>
+        /// <param name="eBayPct"></param>
+        /// <param name="imgLimit"></param>
+        /// <returns></returns>
         public static async Task<int> ScanItems(UserSettingsView settings, 
             int sourceID, 
             double pctProfit, 
@@ -210,6 +227,12 @@ namespace wm
             }
         }
 
+        /// <summary>
+        /// Compose status email.
+        /// </summary>
+        /// <param name="toEmail"></param>
+        /// <param name="title"></param>
+        /// <param name="titles"></param>
         protected static void SendAlertEmail(string toEmail, string title, List<string> titles)
         {
             string body = null;
