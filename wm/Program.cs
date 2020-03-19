@@ -1,7 +1,5 @@
 /*
- * 
- * listen to my voice memo on sending email "getting email to work"
- * 
+ * Scan walmart and update price and inventory as needed.
  * 
  */
 using dsmodels;
@@ -18,7 +16,6 @@ namespace wm
     {
         static string _toEmail = "ventures2019@gmail.com";
         static int _sourceID = 1;
-        //static double _ptcProfit = 5;
 
         static DataModelsDB db = new DataModelsDB();
         readonly static string _logfile = "log.txt";
@@ -121,10 +118,6 @@ namespace wm
                     try
                     {
                         listingID = listing.ID;
-                        //if (listingID == 1193)
-                        //{
-                        //    int stop = 99;
-                        //}
 
                         var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit);
                         Console.WriteLine((++i) + " " + listing.SellerListing.Title);
