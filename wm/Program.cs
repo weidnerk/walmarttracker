@@ -94,6 +94,7 @@ namespace wm
         {
             int i = 0;
             int outofstock = 0;
+            int outofstockBadArrivalDate = 0;
             int invalidURL = 0;
             int shippingNotAvailable = 0;
             int mispriceings = 0;
@@ -103,6 +104,7 @@ namespace wm
             int listingID = 0;
 
             var outofStockList = new List<string>();
+            var outofStockBadArrivalList = new List<string>();
             var priceChangeList = new List<string>();
             var shipNotAvailList = new List<string>();
             var invalidURLList = new List<string>();
@@ -118,8 +120,11 @@ namespace wm
                     try
                     {
                         listingID = listing.ID;
-
-                        var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit);
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Sentinel-18-Gun-Fully-Convertible-Cabinet-Black/19216477")
+                        //{
+                        //    continue;
+                        //}
+                        var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit, true);
                         Console.WriteLine((++i) + " " + listing.SellerListing.Title);
                         if (wmItem == null)  // could not fetch from walmart website
                         {
@@ -132,11 +137,21 @@ namespace wm
                         {
                             if (wmItem.OutOfStock)
                             {
-                                outofStockList.Add(listing.ListingTitle);
                                 response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 listing.Qty = 0;
                                 await db.ListingSaveAsync(settings, listing, "Qty");
-                                ++outofstock;
+
+                                if (!wmItem.Arrives.HasValue)
+                                {
+                                    outofStockBadArrivalList.Add(listing.ListingTitle);
+                                    outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
+                                    ++outofstockBadArrivalDate;
+                                }
+                                else
+                                {
+                                    outofStockList.Add(listing.ListingTitle);
+                                    ++outofstock;
+                                }
                             }
                             else
                             {
@@ -162,9 +177,7 @@ namespace wm
                                     decimal newPrice = priceProfit.ProposePrice;
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                                     await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
-
                                     ++mispriceings;
-
                                 }
                                 if (wmItem.ShippingNotAvailable)
                                 {
@@ -192,7 +205,11 @@ namespace wm
                 }
                 if (outofstock > 0)
                 {
-                    SendAlertEmail(_toEmail, "OUT OF STOCK", outofStockList);
+                    SendAlertEmail(_toEmail, "OUT OF STOCK - LABEL", outofStockList);
+                }
+                if (outofstockBadArrivalDate > 0)
+                {
+                    SendAlertEmail(_toEmail, "OUT OF STOCK - Bad Arrival Date", outofStockBadArrivalList);
                 }
                 if (invalidURL > 0)
                 {
@@ -208,7 +225,7 @@ namespace wm
                 }
                 if (mispriceings + outofstock + invalidURL + shippingNotAvailable + numErrors == 0)
                 {
-                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, "REPRICER", "No issues found.");
+                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, string.Format("REPRICER - scanned {0} items", walListings.Count), "No issues found.");
                 }
                 return outofstock;
             }
