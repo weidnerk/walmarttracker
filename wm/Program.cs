@@ -128,10 +128,21 @@ namespace wm
                         Console.WriteLine((++i) + " " + listing.SellerListing.Title);
                         if (wmItem == null)  // could not fetch from walmart website
                         {
-                            invalidURLList.Add(listing.ListingTitle);
-
-                            Console.WriteLine(listing.ListingTitle);
-                            ++invalidURL;
+                            try
+                            {
+                                invalidURLList.Add(listing.ListingTitle);
+                                invalidURLList.Add(listing.SupplierItem.ItemURL);
+                                invalidURLList.Add(string.Empty);
+                                Console.WriteLine(listing.ListingTitle);
+                                ++invalidURL;
+                            }
+                            catch (Exception exc)
+                            {
+                                ++numErrors;
+                                string msg = "wmItem == null -> " + listing.ListingTitle + " -> " + exc.Message;
+                                errors.Add(msg);
+                                dsutil.DSUtil.WriteFile(_logfile, msg, "");
+                            }
                         }
                         else
                         {
@@ -145,39 +156,56 @@ namespace wm
                                 {
                                     outofStockBadArrivalList.Add(listing.ListingTitle);
                                     outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
+                                    outofStockBadArrivalList.Add(string.Empty);
                                     ++outofstockBadArrivalDate;
                                 }
                                 else
                                 {
                                     outofStockList.Add(listing.ListingTitle);
+                                    outofStockList.Add(listing.SupplierItem.ItemURL);
+                                    outofStockList.Add(string.Empty);
                                     ++outofstock;
                                 }
                             }
                             else
                             {
-                                if (Math.Round(wmItem.SupplierPrice.Value, 2) != Math.Round(listing.SupplierItem.SupplierPrice.Value, 2))
+                                try
                                 {
-                                    priceChangeList.Add(listing.ListingTitle);
-                                    var str = listing.ListedItemID + " db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
-                                    priceChangeList.Add(str);
-
-                                    if (wmItem.SupplierPrice < listing.SupplierItem.SupplierPrice)
+                                    if (Math.Round(wmItem.SupplierPrice.Value, 2) != Math.Round(listing.SupplierItem.SupplierPrice.Value, 2))
                                     {
-                                        str = "Supplier dropped their price.";
+                                        priceChangeList.Add(listing.ListingTitle);
+                                        var str = listing.ListedItemID + " db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
                                         priceChangeList.Add(str);
-                                    }
-                                    else
-                                    {
-                                        str = "Supplier INCREASED their price!";
-                                        priceChangeList.Add(str);
-                                    }
-                                    dsutil.DSUtil.WriteFile(_logfile, body, log_username);
 
-                                    var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
-                                    decimal newPrice = priceProfit.ProposePrice;
-                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
-                                    await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
-                                    ++mispriceings;
+                                        if (wmItem.SupplierPrice < listing.SupplierItem.SupplierPrice)
+                                        {
+                                            str = "Supplier dropped their price.";
+                                            priceChangeList.Add(str);
+                                            priceChangeList.Add(listing.SupplierItem.ItemURL);
+                                            priceChangeList.Add(string.Empty);
+                                        }
+                                        else
+                                        {
+                                            str = "Supplier INCREASED their price!";
+                                            priceChangeList.Add(str);
+                                            priceChangeList.Add(listing.SupplierItem.ItemURL);
+                                            priceChangeList.Add(string.Empty);
+                                        }
+                                        dsutil.DSUtil.WriteFile(_logfile, body, log_username);
+
+                                        var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
+                                        decimal newPrice = priceProfit.ProposePrice;
+                                        response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
+                                        await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
+                                        ++mispriceings;
+                                    }
+                                }
+                                catch (Exception exc)
+                                {
+                                    ++numErrors;
+                                    string msg = "ERROR determining price change -> " + listing.ListingTitle + " -> " + exc.Message;
+                                    errors.Add(msg);
+                                    dsutil.DSUtil.WriteFile(_logfile, msg, "");
                                 }
                                 if (wmItem.ShippingNotAvailable)
                                 {
@@ -185,7 +213,6 @@ namespace wm
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                     listing.Qty = 0;
                                     await db.ListingSaveAsync(settings, listing, "Qty");
-
                                     ++shippingNotAvailable;
                                 }
                             }
@@ -194,7 +221,7 @@ namespace wm
                     catch (Exception exc)
                     {
                         ++numErrors;
-                        string msg = "ERROR IN LOOP listingID: " + listingID + " -> " + exc.Message;
+                        string msg = "ERROR IN LOOP -> " + listing.ListingTitle + " -> " + exc.Message;
                         errors.Add(msg);
                         dsutil.DSUtil.WriteFile(_logfile, msg, "");
                     }
