@@ -44,10 +44,14 @@ namespace wm
                 var eBayPct = Convert.ToDouble(db.GetAppSetting("eBay pct"));
                 int imgLimit = Convert.ToInt32(db.GetAppSetting("Listing Image Limit"));
 
+                byte handlingTime = Convert.ToByte(db.GetAppSetting("handlingTime"));
+                byte maxShippingDays = Convert.ToByte(db.GetAppSetting("maxShippingDays"));
+                var allowedDeliveryDays = handlingTime + maxShippingDays;
+
                 int outofstock = 0;
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit);
+                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit, allowedDeliveryDays);
                 }).Wait();
             }
         }
@@ -89,7 +93,8 @@ namespace wm
             decimal wmShipping, 
             decimal wmFreeShippingMin, 
             double eBayPct, 
-            int imgLimit)
+            int imgLimit,
+            int allowedDeliveryDays)
         {
             int i = 0;
             int outofstock = 0;
@@ -99,6 +104,7 @@ namespace wm
             int mispriceings = 0;
             int numErrors = 0;
             int putBackInStock = 0;
+            int deliveryTooLong = 0;
             var response = new List<string>();
             string body = null;
             int listingID = 0;
@@ -110,6 +116,7 @@ namespace wm
             var invalidURLList = new List<string>();
             var errors = new List<string>();
             var putBackInStockList = new List<string>();
+            var deliveryTooLongList = new List<string>();
 
             try
             {
@@ -125,7 +132,7 @@ namespace wm
                     try
                     {
                         listingID = listing.ID;
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Pennington-Classic-Cedar-Nature-s-Friend-Wild-Bird-Feeder-3-lbs-Seed-Capacity/20713369")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Sentinel-18-Gun-Fully-Convertible-Cabinet-Black/19216477")
                         //{
                         //    continue;
                         //}
@@ -141,38 +148,58 @@ namespace wm
                         }
                         else
                         {
+                            if (wmItem.OutOfStock)
+                            {
+                                if (listing.Qty > 0)
+                                {
+                                    listing.Qty = 0;
+                                    await db.ListingSaveAsync(settings, listing, "Qty");
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                }                              
+                                outofStockList.Add(listing.ListingTitle);
+                                outofStockList.Add(listing.SupplierItem.ItemURL);
+                                outofStockList.Add(string.Empty);
+                                ++outofstock;
+                            }
+                            if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
+                            {
+                                if (listing.Qty > 0)
+                                {
+                                    listing.Qty = 0;
+                                    await db.ListingSaveAsync(settings, listing, "Qty");
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                }                             
+                                outofStockBadArrivalList.Add(listing.ListingTitle);
+                                outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
+                                outofStockBadArrivalList.Add(string.Empty);
+                                ++outofstockBadArrivalDate;
+                            }
                             if (wmItem.ShippingNotAvailable && !wmItem.OutOfStock)
                             {
                                 shipNotAvailList.Add(listing.ListingTitle);
                                 shipNotAvailList.Add(listing.SupplierItem.ItemURL);
                                 shipNotAvailList.Add(string.Empty);
-                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                listing.Qty = 0;
-                                await db.ListingSaveAsync(settings, listing, "Qty");
                                 ++shippingNotAvailable;
+                                if (listing.Qty > 0)
+                                {
+                                    listing.Qty = 0;
+                                    await db.ListingSaveAsync(settings, listing, "Qty");
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                }
                             }
-                            if (wmItem.OutOfStock)
+                            if (wmItem.Arrives.HasValue)
                             {
-                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                listing.Qty = 0;
-                                await db.ListingSaveAsync(settings, listing, "Qty");
-                              
-                                if (!wmItem.Arrives.HasValue)
+                                int days = dsutil.DSUtil.GetBusinessDays(DateTime.Now, wmItem.Arrives.Value);
+                                if (days > allowedDeliveryDays)
                                 {
-                                    outofStockBadArrivalList.Add(listing.ListingTitle);
-                                    outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
-                                    outofStockBadArrivalList.Add(string.Empty);
-                                    ++outofstockBadArrivalDate;
-                                }
-                                else
-                                {
-                                    outofStockList.Add(listing.ListingTitle);
-                                    outofStockList.Add(listing.SupplierItem.ItemURL);
-                                    outofStockList.Add(string.Empty);
-                                    ++outofstock;
+                                    ++deliveryTooLong;
+                                    deliveryTooLongList.Add(listing.ListingTitle);
+                                    deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
+                                    deliveryTooLongList.Add(string.Format("{0} days", days));
+                                    deliveryTooLongList.Add(string.Empty);
                                 }
                             }
-                            else if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable)
+                            if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable)
                             {
                                 ++putBackInStock;
                                 putBackInStockList.Add(listing.ListingTitle);
@@ -203,7 +230,7 @@ namespace wm
 
                                     var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
                                     decimal newPrice = priceProfit.ProposePrice;
-                                    priceChangeList.Add(string.Format("New price: {0}", newPrice));
+                                    priceChangeList.Add(string.Format("New price: {0:c}", newPrice));
                                     priceChangeList.Add(string.Empty);
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                                     await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
@@ -238,11 +265,15 @@ namespace wm
                 }
                 if (shippingNotAvailable > 0)
                 {
-                    SendAlertEmail(_toEmail, "SHIPPING NOT AVAILABLE", shipNotAvailList);
+                    SendAlertEmail(_toEmail, "DELIVERY NOT AVAILABLE", shipNotAvailList);
                 }
                 if (putBackInStock > 0)
                 {
                     SendAlertEmail(_toEmail, "POSSIBLY RE-STOCK", putBackInStockList);
+                }
+                if (deliveryTooLong > 0)
+                {
+                    SendAlertEmail(_toEmail, "DELIVERY TOO LONG", deliveryTooLongList);
                 }
                 if (numErrors > 0)
                 {
