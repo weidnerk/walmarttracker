@@ -44,8 +44,8 @@ namespace wm
                 var eBayPct = Convert.ToDouble(db.GetAppSetting("eBay pct"));
                 int imgLimit = Convert.ToInt32(db.GetAppSetting("Listing Image Limit"));
 
-                byte handlingTime = Convert.ToByte(db.GetAppSetting("handlingTime"));
-                byte maxShippingDays = Convert.ToByte(db.GetAppSetting("maxShippingDays"));
+                byte handlingTime = settings.HandlingTime;
+                byte maxShippingDays = settings.MaxShippingDays;
                 var allowedDeliveryDays = handlingTime + maxShippingDays;
 
                 int outofstock = 0;
@@ -148,7 +148,20 @@ namespace wm
                         }
                         else
                         {
-                            if (wmItem.OutOfStock)
+                            if (wmItem.ShippingNotAvailable)
+                            {
+                                shipNotAvailList.Add(listing.ListingTitle);
+                                shipNotAvailList.Add(listing.SupplierItem.ItemURL);
+                                shipNotAvailList.Add(string.Empty);
+                                ++shippingNotAvailable;
+                                if (listing.Qty > 0)
+                                {
+                                    listing.Qty = 0;
+                                    await db.ListingSaveAsync(settings, listing, "Qty");
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                }
+                            }
+                            if (!wmItem.ShippingNotAvailable && wmItem.OutOfStock)
                             {
                                 if (listing.Qty > 0)
                                 {
@@ -173,19 +186,6 @@ namespace wm
                                 outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
                                 outofStockBadArrivalList.Add(string.Empty);
                                 ++outofstockBadArrivalDate;
-                            }
-                            if (wmItem.ShippingNotAvailable && !wmItem.OutOfStock)
-                            {
-                                shipNotAvailList.Add(listing.ListingTitle);
-                                shipNotAvailList.Add(listing.SupplierItem.ItemURL);
-                                shipNotAvailList.Add(string.Empty);
-                                ++shippingNotAvailable;
-                                if (listing.Qty > 0)
-                                {
-                                    listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, "Qty");
-                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                }
                             }
                             if (wmItem.Arrives.HasValue)
                             {
