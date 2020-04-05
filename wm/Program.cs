@@ -197,6 +197,13 @@ namespace wm
                                     deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
                                     deliveryTooLongList.Add(string.Format("{0} days", days));
                                     deliveryTooLongList.Add(string.Empty);
+
+                                    if (listing.Qty > 0)
+                                    {
+                                        listing.Qty = 0;
+                                        await db.ListingSaveAsync(settings, listing, "Qty");
+                                        response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                    }
                                 }
                             }
                             if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable)
