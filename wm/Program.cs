@@ -132,7 +132,7 @@ namespace wm
                     try
                     {
                         listingID = listing.ID;
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Sentinel-18-Gun-Fully-Convertible-Cabinet-Black/19216477")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/The-Pioneer-Woman-Adeline-Glass-Butter-Dish-with-Salt-And-Pepper-Shaker-Set/54267224")
                         //{
                         //    continue;
                         //}
@@ -142,9 +142,17 @@ namespace wm
                         {
                             invalidURLList.Add(listing.ListingTitle);
                             invalidURLList.Add(listing.SupplierItem.ItemURL);
+                            invalidURLList.Add(string.Format("Qty was {0}", listing.Qty));
                             invalidURLList.Add(string.Empty);
                             Console.WriteLine(listing.ListingTitle);
                             ++invalidURL;
+
+                            if (listing.Qty > 0)
+                            {
+                                listing.Qty = 0;
+                                await db.ListingSaveAsync(settings, listing, "Qty");
+                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                            }
                         }
                         else
                         {
@@ -187,15 +195,18 @@ namespace wm
                                 outofStockBadArrivalList.Add(string.Empty);
                                 ++outofstockBadArrivalDate;
                             }
+                            bool lateDelivery = false;
                             if (wmItem.Arrives.HasValue)
                             {
                                 int days = dsutil.DSUtil.GetBusinessDays(DateTime.Now, wmItem.Arrives.Value);
                                 if (days > allowedDeliveryDays)
                                 {
+                                    lateDelivery = true;
                                     ++deliveryTooLong;
                                     deliveryTooLongList.Add(listing.ListingTitle);
                                     deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
                                     deliveryTooLongList.Add(string.Format("{0} days", days));
+                                    deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
                                     deliveryTooLongList.Add(string.Empty);
 
                                     if (listing.Qty > 0)
@@ -206,7 +217,7 @@ namespace wm
                                     }
                                 }
                             }
-                            if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable)
+                            if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !lateDelivery)
                             {
                                 ++putBackInStock;
                                 putBackInStockList.Add(listing.ListingTitle);
