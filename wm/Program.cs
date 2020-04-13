@@ -122,7 +122,6 @@ namespace wm
             {
                 string token = db.GetToken(settings);
                 var walListings = db.Listings
-                    .Include(c => c.SellerListing)
                     .Include(d => d.SupplierItem)
                     .Where(x => x.SupplierItem.SourceID == sourceID && x.Listed != null && x.StoreID == settings.StoreID)
                     .ToList();
@@ -132,12 +131,12 @@ namespace wm
                     try
                     {
                         listingID = listing.ID;
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/The-Pioneer-Woman-Adeline-Glass-Butter-Dish-with-Salt-And-Pepper-Shaker-Set/54267224")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Rawlings-Big-Hitter-Batting-Tee/933578244")
                         //{
                         //    continue;
                         //}
                         var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit, true);
-                        Console.WriteLine((++i) + " " + listing.SellerListing.Title);
+                        Console.WriteLine((++i) + " " + listing.ListingTitle);
                         if (wmItem == null)  // could not fetch from walmart website
                         {
                             invalidURLList.Add(listing.ListingTitle);
@@ -217,7 +216,7 @@ namespace wm
                                     }
                                 }
                             }
-                            if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !lateDelivery)
+                            if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !lateDelivery && (wmItem.SoldAndShippedBySupplier ?? false))
                             {
                                 ++putBackInStock;
                                 putBackInStockList.Add(listing.ListingTitle);
