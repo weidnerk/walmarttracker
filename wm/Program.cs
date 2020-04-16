@@ -1,6 +1,16 @@
 /*
  * Scan walmart and update price and inventory as needed.
  * 
+ * 100   deliveryTooLongList
+ * 200   outofStockBadArrivalList
+ * 300   outofStockList
+ * 400   shipNotAvailList
+ * 500   invalidURLList
+ * 600   putBackInStockList
+ * 700   priceChangeList
+
+ * 10000 error
+
  */
 using dsmodels;
 using System;
@@ -39,10 +49,10 @@ namespace wm
                 string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
                 var settings = db.GetUserSettingsView(connStr, userID);
                 var pctProfit = settings.PctProfit;
-                var wmShipping = Convert.ToDecimal(db.GetAppSetting("Walmart shipping"));
-                var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting("Walmart free shipping min"));
-                var eBayPct = Convert.ToDouble(db.GetAppSetting("eBay pct"));
-                int imgLimit = Convert.ToInt32(db.GetAppSetting("Listing Image Limit"));
+                var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
+                var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
+                var eBayPct = Convert.ToDouble(db.GetAppSetting(settings, "eBay pct"));
+                int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
 
                 byte handlingTime = settings.HandlingTime;
                 byte maxShippingDays = settings.MaxShippingDays;
@@ -131,7 +141,7 @@ namespace wm
                     try
                     {
                         listingID = listing.ID;
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Rawlings-Big-Hitter-Batting-Tee/933578244")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Shop-Vac-6-Gallon-4-5-Peak-HP-Stainless-Steel-Wet-Dry-Vacuum/55042495")
                         //{
                         //    continue;
                         //}
@@ -145,6 +155,8 @@ namespace wm
                             invalidURLList.Add(string.Empty);
                             Console.WriteLine(listing.ListingTitle);
                             ++invalidURL;
+                            var log = new ListingLog { ListingID = listing.ID, MsgID = 500 };
+                            await db.ListingLogAdd(log);
 
                             if (listing.Qty > 0)
                             {
@@ -161,6 +173,9 @@ namespace wm
                                 shipNotAvailList.Add(listing.SupplierItem.ItemURL);
                                 shipNotAvailList.Add(string.Empty);
                                 ++shippingNotAvailable;
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 400 };
+                                await db.ListingLogAdd(log);
+
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
@@ -180,6 +195,9 @@ namespace wm
                                 outofStockList.Add(listing.SupplierItem.ItemURL);
                                 outofStockList.Add(string.Empty);
                                 ++outofstock;
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 300 };
+                                await db.ListingLogAdd(log);
+
                             }
                             if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
                             {
@@ -193,6 +211,8 @@ namespace wm
                                 outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
                                 outofStockBadArrivalList.Add(string.Empty);
                                 ++outofstockBadArrivalDate;
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 200 };
+                                await db.ListingLogAdd(log);
                             }
                             bool lateDelivery = false;
                             if (wmItem.Arrives.HasValue)
@@ -205,8 +225,12 @@ namespace wm
                                     deliveryTooLongList.Add(listing.ListingTitle);
                                     deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
                                     deliveryTooLongList.Add(string.Format("{0} days", days));
+                                    var note = string.Format("{0} days", days);
                                     deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
+                                    note += string.Format(" (Qty was {0})", listing.Qty);
                                     deliveryTooLongList.Add(string.Empty);
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 100, Note = note };
+                                    await db.ListingLogAdd(log);
 
                                     if (listing.Qty > 0)
                                     {
@@ -222,6 +246,9 @@ namespace wm
                                 putBackInStockList.Add(listing.ListingTitle);
                                 putBackInStockList.Add(listing.SupplierItem.ItemURL);
                                 putBackInStockList.Add(string.Empty);
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 600 };
+                                await db.ListingLogAdd(log);
+
                             }
                             else
                             {
@@ -229,17 +256,20 @@ namespace wm
                                 {
                                     priceChangeList.Add(listing.ListingTitle);
                                     var str = listing.ListedItemID + " db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
+                                    string note = "db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
                                     priceChangeList.Add(str);
 
                                     if (wmItem.SupplierPrice < listing.SupplierItem.SupplierPrice)
                                     {
                                         str = "Supplier dropped their price.";
+                                        note += " " + str;
                                         priceChangeList.Add(str);
                                         priceChangeList.Add(listing.SupplierItem.ItemURL);
                                     }
                                     else
                                     {
                                         str = "Supplier INCREASED their price!";
+                                        note += " " + str;
                                         priceChangeList.Add(str);
                                         priceChangeList.Add(listing.SupplierItem.ItemURL);
                                     }
@@ -248,10 +278,14 @@ namespace wm
                                     var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
                                     decimal newPrice = priceProfit.ProposePrice;
                                     priceChangeList.Add(string.Format("New price: {0:c}", newPrice));
+                                    note += string.Format(" New price: {0:c}", newPrice);
                                     priceChangeList.Add(string.Empty);
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                                     await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
                                     ++mispriceings;
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 700, Note = note };
+                                    await db.ListingLogAdd(log);
+
                                 }
                             }
                         }
@@ -259,6 +293,9 @@ namespace wm
                     catch (Exception exc)
                     {
                         ++numErrors;
+                        var log = new ListingLog { ListingID = listing.ID, MsgID = 10000 };
+                        await db.ListingLogAdd(log);
+
                         string msg = "ERROR IN LOOP -> " + listing.ListingTitle + " -> " + exc.Message;
                         errors.Add(msg);
                         dsutil.DSUtil.WriteFile(_logfile, msg, "");
@@ -266,6 +303,9 @@ namespace wm
                 }
                 if (mispriceings > 0)
                 {
+                    foreach(var s in priceChangeList)
+                    {
+                    }
                     SendAlertEmail(_toEmail, "PRICE CHANGE", priceChangeList);
                 }
                 if (outofstock > 0)
