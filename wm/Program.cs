@@ -47,7 +47,7 @@ namespace wm
                 storeID = Convert.ToInt32(args[0]);
                 string userID = UserID(storeID);
                 string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
-                var settings = db.GetUserSettingsView(connStr, userID);
+                var settings = db.GetUserSettingsView(connStr, userID, storeID);
                 var pctProfit = settings.PctProfit;
                 var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
                 var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
@@ -59,9 +59,10 @@ namespace wm
                 var allowedDeliveryDays = handlingTime + maxShippingDays;
 
                 int outofstock = 0;
+
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit, allowedDeliveryDays);
+                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit, allowedDeliveryDays, storeID);
                 }).Wait();
             }
         }
@@ -130,6 +131,9 @@ namespace wm
 
             try
             {
+                DateTime startTime, endTime;
+                startTime = DateTime.Now;
+
                 string token = db.GetToken(settings);
                 var walListings = db.Listings
                     .Include(d => d.SupplierItem)
@@ -301,6 +305,10 @@ namespace wm
                         dsutil.DSUtil.WriteFile(_logfile, msg, "");
                     }
                 }
+
+                endTime = DateTime.Now;
+                double elapsedMinutes = ((TimeSpan)(endTime - startTime)).TotalMinutes;
+
                 if (mispriceings > 0)
                 {
                     foreach(var s in priceChangeList)
@@ -326,7 +334,7 @@ namespace wm
                 }
                 if (putBackInStock > 0)
                 {
-                    SendAlertEmail(_toEmail, "POSSIBLY RE-STOCK", putBackInStockList);
+                    SendAlertEmail(_toEmail, "POSSIBLY RE-STOCK " + settings.StoreName, putBackInStockList);
                 }
                 if (deliveryTooLong > 0)
                 {
