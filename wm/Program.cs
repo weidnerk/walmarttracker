@@ -19,6 +19,7 @@ using System.Configuration;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Data.Entity;
+using System.Threading;
 
 namespace wm
 {
@@ -62,7 +63,7 @@ namespace wm
 
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit, allowedDeliveryDays, storeID);
+                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit, allowedDeliveryDays);
                 }).Wait();
             }
         }
@@ -144,6 +145,10 @@ namespace wm
                 {
                     try
                     {
+                        Random random = new Random();
+                        int sec = random.Next(2);
+                        Thread.Sleep(sec * 1000);
+
                         listingID = listing.ID;
                         //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Shop-Vac-6-Gallon-4-5-Peak-HP-Stainless-Steel-Wet-Dry-Vacuum/55042495")
                         //{
@@ -159,7 +164,7 @@ namespace wm
                             invalidURLList.Add(string.Empty);
                             Console.WriteLine(listing.ListingTitle);
                             ++invalidURL;
-                            var log = new ListingLog { ListingID = listing.ID, MsgID = 500 };
+                            var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
                             await db.ListingLogAdd(log);
 
                             if (listing.Qty > 0)
@@ -177,7 +182,7 @@ namespace wm
                                 shipNotAvailList.Add(listing.SupplierItem.ItemURL);
                                 shipNotAvailList.Add(string.Empty);
                                 ++shippingNotAvailable;
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 400 };
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
 
                                 if (listing.Qty > 0)
@@ -199,7 +204,7 @@ namespace wm
                                 outofStockList.Add(listing.SupplierItem.ItemURL);
                                 outofStockList.Add(string.Empty);
                                 ++outofstock;
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 300 };
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
 
                             }
@@ -215,7 +220,7 @@ namespace wm
                                 outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
                                 outofStockBadArrivalList.Add(string.Empty);
                                 ++outofstockBadArrivalDate;
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 200 };
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
                             }
                             bool lateDelivery = false;
@@ -233,7 +238,7 @@ namespace wm
                                     deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
                                     note += string.Format(" (Qty was {0})", listing.Qty);
                                     deliveryTooLongList.Add(string.Empty);
-                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 100, Note = note };
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 100, Note = note, UserID = settings.UserID };
                                     await db.ListingLogAdd(log);
 
                                     if (listing.Qty > 0)
@@ -250,7 +255,7 @@ namespace wm
                                 putBackInStockList.Add(listing.ListingTitle);
                                 putBackInStockList.Add(listing.SupplierItem.ItemURL);
                                 putBackInStockList.Add(string.Empty);
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 600 };
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
 
                             }
@@ -287,9 +292,8 @@ namespace wm
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
                                     await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
                                     ++mispriceings;
-                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 700, Note = note };
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 700, Note = note, UserID = settings.UserID };
                                     await db.ListingLogAdd(log);
-
                                 }
                             }
                         }
@@ -297,7 +301,7 @@ namespace wm
                     catch (Exception exc)
                     {
                         ++numErrors;
-                        var log = new ListingLog { ListingID = listing.ID, MsgID = 10000 };
+                        var log = new ListingLog { ListingID = listing.ID, MsgID = 10000, UserID = settings.UserID };
                         await db.ListingLogAdd(log);
 
                         string msg = "ERROR IN LOOP -> " + listing.ListingTitle + " -> " + exc.Message;
@@ -334,6 +338,7 @@ namespace wm
                 }
                 if (putBackInStock > 0)
                 {
+                    putBackInStockList.Add(string.Format("elapsed time: {0} minutes", Math.Round(elapsedMinutes, 2)));
                     SendAlertEmail(_toEmail, "POSSIBLY RE-STOCK " + settings.StoreName, putBackInStockList);
                 }
                 if (deliveryTooLong > 0)
