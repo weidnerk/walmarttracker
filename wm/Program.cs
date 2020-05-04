@@ -233,7 +233,7 @@ namespace wm
                                     ++deliveryTooLong;
                                     deliveryTooLongList.Add(listing.ListingTitle);
                                     deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
-                                    deliveryTooLongList.Add(string.Format("{0} days", days));
+                                    deliveryTooLongList.Add(string.Format("{0} days, over by {1} days(s)", days, days - allowedDeliveryDays));
                                     var note = string.Format("{0} days", days);
                                     deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
                                     note += string.Format(" (Qty was {0})", listing.Qty);
