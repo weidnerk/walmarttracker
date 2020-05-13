@@ -52,7 +52,7 @@ namespace wm
                 var pctProfit = settings.PctProfit;
                 var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
                 var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
-                var eBayPct = Convert.ToDouble(db.GetAppSetting(settings, "eBay pct"));
+                //var eBayPct = Convert.ToDouble(db.GetAppSetting(settings, "eBay pct"));
                 int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
 
                 byte handlingTime = settings.HandlingTime;
@@ -63,7 +63,7 @@ namespace wm
 
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, eBayPct, imgLimit, allowedDeliveryDays);
+                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays);
                 }).Wait();
             }
         }
@@ -138,7 +138,7 @@ namespace wm
                 string token = db.GetToken(settings);
                 var walListings = db.Listings
                     .Include(d => d.SupplierItem)
-                    .Where(x => x.SupplierItem.SourceID == sourceID && x.Listed != null && x.StoreID == settings.StoreID)
+                    .Where(x => x.SupplierItem.SourceID == sourceID && x.Listed != null && x.StoreID == settings.StoreID && !x.InActive)
                     .ToList();
 
                 foreach (Listing listing in walListings)
@@ -170,7 +170,7 @@ namespace wm
                             if (listing.Qty > 0)
                             {
                                 listing.Qty = 0;
-                                await db.ListingSaveAsync(settings, listing, "Qty");
+                                await db.ListingSaveAsync(settings, listing, false, "Qty");
                                 response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                             }
                         }
@@ -188,7 +188,7 @@ namespace wm
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, "Qty");
+                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }
                             }
@@ -197,7 +197,7 @@ namespace wm
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, "Qty");
+                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }                              
                                 outofStockList.Add(listing.ListingTitle);
@@ -213,7 +213,7 @@ namespace wm
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, "Qty");
+                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }                             
                                 outofStockBadArrivalList.Add(listing.ListingTitle);
@@ -244,20 +244,33 @@ namespace wm
                                     if (listing.Qty > 0)
                                     {
                                         listing.Qty = 0;
-                                        await db.ListingSaveAsync(settings, listing, "Qty");
+                                        await db.ListingSaveAsync(settings, listing, false, "Qty");
                                         response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                     }
                                 }
                             }
                             if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !lateDelivery && (wmItem.SoldAndShippedBySupplier ?? false))
                             {
+                                var newListedQty = 1;
                                 ++putBackInStock;
                                 putBackInStockList.Add(listing.ListingTitle);
                                 putBackInStockList.Add(listing.SupplierItem.ItemURL);
                                 putBackInStockList.Add(string.Empty);
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID };
-                                await db.ListingLogAdd(log);
-
+                              
+                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: newListedQty);
+                                if (response.Count > 0)
+                                {
+                                    var output = dsutil.DSUtil.ListToDelimited(response, ';');
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
+                                    await db.ListingLogAdd(log);
+                                }
+                                else
+                                {
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID };
+                                    await db.ListingLogAdd(log);
+                                }
+                                listing.Qty = newListedQty;
+                                await db.ListingSaveAsync(settings, listing, false, "Qty");
                             }
                             else
                             {
@@ -363,6 +376,10 @@ namespace wm
             }
         }
 
+        void PutBackInStock()
+        {
+
+        }
         /// <summary>
         /// Compose status email.
         /// </summary>
