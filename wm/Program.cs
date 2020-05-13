@@ -108,6 +108,7 @@ namespace wm
             int imgLimit,
             int allowedDeliveryDays)
         {
+            int daysBack = 14;
             int i = 0;
             int outofstock = 0;
             int outofstockBadArrivalDate = 0;
@@ -117,6 +118,7 @@ namespace wm
             int numErrors = 0;
             int putBackInStock = 0;
             int deliveryTooLong = 0;
+            int parseArrivalDate = 0;
             var response = new List<string>();
             string body = null;
             int listingID = 0;
@@ -129,6 +131,7 @@ namespace wm
             var errors = new List<string>();
             var putBackInStockList = new List<string>();
             var deliveryTooLongList = new List<string>();
+            var parseArrivalDateList = new List<string>();
 
             try
             {
@@ -176,11 +179,37 @@ namespace wm
                         }
                         else
                         {
+                            if (wmItem.ArrivalDateFlag == 1 || wmItem.ArrivalDateFlag == 2)
+                            {
+                                ++parseArrivalDate;
+                                parseArrivalDateList.Add(listing.ListingTitle);
+                                parseArrivalDateList.Add(listing.SupplierItem.ItemURL);
+                                parseArrivalDateList.Add(string.Format("Code: {0}", wmItem.ArrivalDateFlag));
+                                parseArrivalDateList.Add(string.Empty);
+
+                                int cnt = CountMsgID(listing.ID, 1000, daysBack);
+                                parseArrivalDateList.Add(string.Format("Parse arrival date: {0}", cnt));
+
+                                cnt = CountMsgID(listing.ID, 0, daysBack);
+                                parseArrivalDateList.Add(string.Format("Total entries: {0}", cnt));
+                                parseArrivalDateList.Add(string.Empty);
+
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 1000, UserID = settings.UserID };
+                                await db.ListingLogAdd(log);
+                            }
                             if (wmItem.ShippingNotAvailable)
                             {
                                 shipNotAvailList.Add(listing.ListingTitle);
                                 shipNotAvailList.Add(listing.SupplierItem.ItemURL);
                                 shipNotAvailList.Add(string.Empty);
+
+                                int cnt = CountMsgID(listing.ID, 400, daysBack);
+                                shipNotAvailList.Add(string.Format("Delivery not available: {0}", cnt));
+
+                                cnt = CountMsgID(listing.ID, 0, daysBack);
+                                shipNotAvailList.Add(string.Format("Total entries: {0}", cnt));
+                                shipNotAvailList.Add(string.Empty);
+
                                 ++shippingNotAvailable;
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
@@ -238,6 +267,15 @@ namespace wm
                                     deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
                                     note += string.Format(" (Qty was {0})", listing.Qty);
                                     deliveryTooLongList.Add(string.Empty);
+
+                                    int cnt = CountMsgID(listing.ID, 100, daysBack);
+                                    deliveryTooLongList.Add(string.Format("Delivery too long: {0}", cnt));
+
+                                    cnt = CountMsgID(listing.ID, 0, daysBack);
+                                    deliveryTooLongList.Add(string.Format("Total entries: {0}", cnt));
+                                    deliveryTooLongList.Add(string.Empty);
+
+                                    note += string.Format(" (Qty was {0})", listing.Qty);
                                     var log = new ListingLog { ListingID = listing.ID, MsgID = 100, Note = note, UserID = settings.UserID };
                                     await db.ListingLogAdd(log);
 
@@ -358,6 +396,10 @@ namespace wm
                 {
                     SendAlertEmail(_toEmail, "DELIVERY TOO LONG", deliveryTooLongList);
                 }
+                if (parseArrivalDate > 0)
+                {
+                    SendAlertEmail(_toEmail, "PARSE ARRIVAL DATE - START SELENIUM", parseArrivalDateList);
+                }
                 if (numErrors > 0)
                 {
                     SendAlertEmail(_toEmail, "TRACKER ERRORS", errors);
@@ -374,6 +416,27 @@ namespace wm
                 dsutil.DSUtil.WriteFile(_logfile, msg, "");
                 return outofstock;
             }
+        }
+
+        /// <summary>
+        /// How many times has msgID appeard in last x times
+        /// </summary>
+        /// <param name="listingID"></param>
+        /// <param name="msgID">Pass 0 for all</param>
+        /// <returns></returns>
+        static int CountMsgID(int listingID, int msgID, int daysBack)
+        {
+            DateTime twoWeeks = DateTime.Now.AddDays(-daysBack);
+            int count = 0;
+            if (msgID > 0)
+            {
+                count = db.ListingLogs.Where(x => x.ListingID == listingID && x.Created > twoWeeks && x.MsgID == msgID).Count();
+            }
+            else
+            {
+                count = db.ListingLogs.Where(x => x.ListingID == listingID && x.Created > twoWeeks).Count();
+            }
+            return count;
         }
 
         void PutBackInStock()
