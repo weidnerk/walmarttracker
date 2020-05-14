@@ -20,6 +20,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Data.Entity;
 using System.Threading;
+using eBayUtility;
+using System.Data.Entity.Migrations.Infrastructure;
 
 namespace wm
 {
@@ -29,7 +31,7 @@ namespace wm
         static int _sourceID = 1;
 
         static DataModelsDB db = new DataModelsDB();
-        readonly static string _logfile = "log.txt";
+        //readonly static string _logfile = "log.txt";
         const string log_username = "admin";
 
         // My ID is used for the tracker.
@@ -38,13 +40,15 @@ namespace wm
 
         static void Main(string[] args)
         {
+            string logfile = null;
             int storeID;
-            if (args.Length != 1)
+            if (args.Length != 2)
             {
                 Console.WriteLine("Invalid arguments.");
             }
             else
             {
+                logfile = args[1];
                 storeID = Convert.ToInt32(args[0]);
                 string userID = UserID(storeID);
                 string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
@@ -52,7 +56,6 @@ namespace wm
                 var pctProfit = settings.PctProfit;
                 var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
                 var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
-                //var eBayPct = Convert.ToDouble(db.GetAppSetting(settings, "eBay pct"));
                 int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
 
                 byte handlingTime = settings.HandlingTime;
@@ -61,10 +64,40 @@ namespace wm
 
                 int outofstock = 0;
 
+                GetOrders(settings, logfile);
+
                 Task.Run(async () =>
                 {
-                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays);
+                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile);
                 }).Wait();
+            }
+        }
+
+        static void GetOrders(UserSettingsView settings, string logfile)
+        {
+            try
+            {
+                DateTime ed = DateTime.Now;
+                DateTime sd = ed.AddHours(-3);
+                var orders = ebayAPIs.GetOrdersByDate(settings, sd, ed);
+                if (orders.Count > 0)
+                {
+                    var msg = new List<string>();
+                    foreach(var o in orders)
+                    {
+                        msg.Add(o.ListedItemID);
+                        msg.Add(o.Buyer);
+                        msg.Add(o.DatePurchased.ToString());
+                        msg.Add(o.Qty.ToString());
+                        msg.Add("");
+                    }
+                    SendAlertEmail(_toEmail, settings.StoreName + " ORDERS", msg);
+                }
+            }
+            catch (Exception exc)
+            {
+                string msg = dsutil.DSUtil.ErrMsg("GetOrders", exc);
+                dsutil.DSUtil.WriteFile(logfile, msg, settings.UserName);
             }
         }
 
@@ -106,7 +139,8 @@ namespace wm
             decimal wmFreeShippingMin, 
             double eBayPct, 
             int imgLimit,
-            int allowedDeliveryDays)
+            int allowedDeliveryDays,
+            string logfile)
         {
             int daysBack = 14;
             int i = 0;
@@ -153,10 +187,12 @@ namespace wm
                         Thread.Sleep(sec * 1000);
 
                         listingID = listing.ID;
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Shop-Vac-6-Gallon-4-5-Peak-HP-Stainless-Steel-Wet-Dry-Vacuum/55042495")
+
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Farberware-Air-Fryer-Toaster-Oven/718543483")
                         //{
                         //    continue;
                         //}
+
                         var wmItem = await wallib.wmUtility.GetDetail(listing.SupplierItem.ItemURL, imgLimit, true);
                         Console.WriteLine((++i) + " " + listing.ListingTitle);
                         if (wmItem == null)  // could not fetch from walmart website
@@ -165,7 +201,12 @@ namespace wm
                             invalidURLList.Add(listing.SupplierItem.ItemURL);
                             invalidURLList.Add(string.Format("Qty was {0}", listing.Qty));
                             invalidURLList.Add(string.Empty);
-                            Console.WriteLine(listing.ListingTitle);
+
+                            int cnt = CountMsgID(listing.ID, 500, daysBack);
+                            int total = CountMsgID(listing.ID, 0, daysBack);
+                            invalidURLList.Add(string.Format("Invalid URL: {0}/{1}", cnt, total));
+                            invalidURLList.Add(string.Empty);
+
                             ++invalidURL;
                             var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
                             await db.ListingLogAdd(log);
@@ -188,10 +229,8 @@ namespace wm
                                 parseArrivalDateList.Add(string.Empty);
 
                                 int cnt = CountMsgID(listing.ID, 1000, daysBack);
-                                parseArrivalDateList.Add(string.Format("Parse arrival date: {0}", cnt));
-
-                                cnt = CountMsgID(listing.ID, 0, daysBack);
-                                parseArrivalDateList.Add(string.Format("Total entries: {0}", cnt));
+                                int total = CountMsgID(listing.ID, 0, daysBack);
+                                parseArrivalDateList.Add(string.Format("Parse arrival date: {0}/{1}", total));
                                 parseArrivalDateList.Add(string.Empty);
 
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 1000, UserID = settings.UserID };
@@ -204,16 +243,15 @@ namespace wm
                                 shipNotAvailList.Add(string.Empty);
 
                                 int cnt = CountMsgID(listing.ID, 400, daysBack);
-                                shipNotAvailList.Add(string.Format("Delivery not available: {0}", cnt));
-
-                                cnt = CountMsgID(listing.ID, 0, daysBack);
-                                shipNotAvailList.Add(string.Format("Total entries: {0}", cnt));
+                                int total = CountMsgID(listing.ID, 0, daysBack);
+                                shipNotAvailList.Add(string.Format("Delivery not available: {0}/{1}", cnt, total));
                                 shipNotAvailList.Add(string.Empty);
 
                                 ++shippingNotAvailable;
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
 
+                                // but what if db=0 and ebay > 0 ?
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
@@ -269,10 +307,8 @@ namespace wm
                                     deliveryTooLongList.Add(string.Empty);
 
                                     int cnt = CountMsgID(listing.ID, 100, daysBack);
-                                    deliveryTooLongList.Add(string.Format("Delivery too long: {0}", cnt));
-
-                                    cnt = CountMsgID(listing.ID, 0, daysBack);
-                                    deliveryTooLongList.Add(string.Format("Total entries: {0}", cnt));
+                                    int total = CountMsgID(listing.ID, 0, daysBack);
+                                    deliveryTooLongList.Add(string.Format("Delivery too long: {0}/{1}", cnt, total));
                                     deliveryTooLongList.Add(string.Empty);
 
                                     note += string.Format(" (Qty was {0})", listing.Qty);
@@ -333,7 +369,7 @@ namespace wm
                                         priceChangeList.Add(str);
                                         priceChangeList.Add(listing.SupplierItem.ItemURL);
                                     }
-                                    dsutil.DSUtil.WriteFile(_logfile, body, log_username);
+                                    dsutil.DSUtil.WriteFile(logfile, body, log_username);
 
                                     var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
                                     decimal newPrice = priceProfit.ProposePrice;
@@ -357,7 +393,7 @@ namespace wm
 
                         string msg = "ERROR IN LOOP -> " + listing.ListingTitle + " -> " + exc.Message;
                         errors.Add(msg);
-                        dsutil.DSUtil.WriteFile(_logfile, msg, "");
+                        dsutil.DSUtil.WriteFile(logfile, msg, "");
                     }
                 }
 
@@ -369,40 +405,40 @@ namespace wm
                     foreach(var s in priceChangeList)
                     {
                     }
-                    SendAlertEmail(_toEmail, "PRICE CHANGE", priceChangeList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " PRICE CHANGE", priceChangeList);
                 }
                 if (outofstock > 0)
                 {
-                    SendAlertEmail(_toEmail, "OUT OF STOCK - LABEL", outofStockList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " OUT OF STOCK - LABEL", outofStockList);
                 }
                 if (outofstockBadArrivalDate > 0)
                 {
-                    SendAlertEmail(_toEmail, "OUT OF STOCK - Bad Arrival Date", outofStockBadArrivalList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " OUT OF STOCK - Bad Arrival Date", outofStockBadArrivalList);
                 }
                 if (invalidURL > 0)
                 {
-                    SendAlertEmail(_toEmail, "INVALID URL", invalidURLList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " INVALID URL ", invalidURLList);
                 }
                 if (shippingNotAvailable > 0)
                 {
-                    SendAlertEmail(_toEmail, "DELIVERY NOT AVAILABLE", shipNotAvailList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY NOT AVAILABLE ", shipNotAvailList);
                 }
                 if (putBackInStock > 0)
                 {
                     putBackInStockList.Add(string.Format("elapsed time: {0} minutes", Math.Round(elapsedMinutes, 2)));
-                    SendAlertEmail(_toEmail, "POSSIBLY RE-STOCK " + settings.StoreName, putBackInStockList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " POSSIBLY RE-STOCK ", putBackInStockList);
                 }
                 if (deliveryTooLong > 0)
                 {
-                    SendAlertEmail(_toEmail, "DELIVERY TOO LONG", deliveryTooLongList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY TOO LONG ", deliveryTooLongList);
                 }
                 if (parseArrivalDate > 0)
                 {
-                    SendAlertEmail(_toEmail, "PARSE ARRIVAL DATE - START SELENIUM", parseArrivalDateList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " PARSE ARRIVAL DATE - START SELENIUM ", parseArrivalDateList);
                 }
                 if (numErrors > 0)
                 {
-                    SendAlertEmail(_toEmail, "TRACKER ERRORS", errors);
+                    SendAlertEmail(_toEmail, settings.StoreName + " TRACKER ERRORS ", errors);
                 }
                 if (mispriceings + outofstock + invalidURL + shippingNotAvailable + numErrors + putBackInStock == 0)
                 {
@@ -413,7 +449,7 @@ namespace wm
             catch(Exception exc)
             {
                 string msg = "listingID: " + listingID + " -> " + exc.Message;
-                dsutil.DSUtil.WriteFile(_logfile, msg, "");
+                dsutil.DSUtil.WriteFile(logfile, msg, "");
                 return outofstock;
             }
         }
