@@ -82,7 +82,6 @@ namespace wm
             {
                 string msg = dsutil.DSUtil.ErrMsg("Main", exc);
                 dsutil.DSUtil.WriteFile(logfile, msg, settings.UserName);
-                throw;
             }
         }
 
@@ -98,18 +97,19 @@ namespace wm
                     var msg = new List<string>();
                     foreach(var o in orders)
                     {
-                        msg.Add(o.ListedItemID);
-                        msg.Add(o.Buyer);
-                        msg.Add(o.DatePurchased.ToString());
-                        msg.Add(o.Qty.ToString());
-                        msg.Add("");
-
                         // sync db qty
                         var sellerListing = await ebayAPIs.GetSingleItem(settings, o.ListedItemID, false);
                         var listing = db.ListingGet(o.ListedItemID);
 
                         listing.Qty = sellerListing.Qty.Value;
                         await db.ListingSaveAsync(settings, listing, false, "Qty");
+
+                        msg.Add(o.ListedItemID);
+                        msg.Add(listing.ListingTitle);
+                        msg.Add(o.Buyer);
+                        msg.Add(o.DatePurchased.ToString());
+                        msg.Add(o.Qty.ToString());
+                        msg.Add("");
                     }
                     SendAlertEmail(_toEmail, settings.StoreName + " ORDERS", msg);
                 }
@@ -487,7 +487,7 @@ namespace wm
             {
                 string msg = "listingID: " + listingID + " -> " + exc.Message;
                 dsutil.DSUtil.WriteFile(logfile, msg, "");
-                return outofstock;
+                throw;
             }
         }
 
