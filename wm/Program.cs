@@ -40,12 +40,13 @@ namespace wm
 
         static void Main(string[] args)
         {
+            int daysBack = 21;
             UserSettingsView settings = null;
             string logfile = null;
             try 
             { 
                 int storeID;
-                if (args.Length != 2)
+                if (args.Length != 3)
                 {
                     Console.WriteLine("Invalid arguments.");
                 }
@@ -53,6 +54,7 @@ namespace wm
                 {
                     logfile = args[1];
                     storeID = Convert.ToInt32(args[0]);
+                    daysBack = Convert.ToInt32(args[2]);
                     string userID = UserID(storeID);
                     string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
                     settings = db.GetUserSettingsView(connStr, userID, storeID);
@@ -74,7 +76,7 @@ namespace wm
 
                     Task.Run(async () =>
                     {
-                        outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile);
+                        outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile, daysBack);
                     }).Wait();
                 }
             }
@@ -161,9 +163,9 @@ namespace wm
             double eBayPct, 
             int imgLimit,
             int allowedDeliveryDays,
-            string logfile)
+            string logfile,
+            int daysBack)
         {
-            int daysBack = 14;
             int i = 0;
             int outofstock = 0;
             int outofstockBadArrivalDate = 0;
@@ -209,7 +211,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Oreck-Commercial-XL2100RHS-Upright-Vacuum-Cleaner/21190412")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Flambeau-50-5-inch-Rifle-Shotgun-Case/969413734")
                         //{
                         //    continue;
                         //}
