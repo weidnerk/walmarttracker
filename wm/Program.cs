@@ -40,40 +40,53 @@ namespace wm
 
         static void Main(string[] args)
         {
+            UserSettingsView settings = null;
             string logfile = null;
-            int storeID;
-            if (args.Length != 2)
-            {
-                Console.WriteLine("Invalid arguments.");
-            }
-            else
-            {
-                logfile = args[1];
-                storeID = Convert.ToInt32(args[0]);
-                string userID = UserID(storeID);
-                string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
-                var settings = db.GetUserSettingsView(connStr, userID, storeID);
-                var pctProfit = settings.PctProfit;
-                var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
-                var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
-                int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
-
-                byte handlingTime = settings.HandlingTime;
-                byte maxShippingDays = settings.MaxShippingDays;
-                var allowedDeliveryDays = handlingTime + maxShippingDays;
-
-                int outofstock = 0;
-
-                GetOrders(settings, logfile);
-
-                Task.Run(async () =>
+            try 
+            { 
+                int storeID;
+                if (args.Length != 2)
                 {
-                    outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile);
-                }).Wait();
+                    Console.WriteLine("Invalid arguments.");
+                }
+                else
+                {
+                    logfile = args[1];
+                    storeID = Convert.ToInt32(args[0]);
+                    string userID = UserID(storeID);
+                    string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
+                    settings = db.GetUserSettingsView(connStr, userID, storeID);
+                    var pctProfit = settings.PctProfit;
+                    var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
+                    var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
+                    int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
+
+                    byte handlingTime = settings.HandlingTime;
+                    byte maxShippingDays = settings.MaxShippingDays;
+                    var allowedDeliveryDays = handlingTime + maxShippingDays;
+
+                    int outofstock = 0;
+
+                    Task.Run(async () =>
+                    { 
+                        await GetOrders(settings, logfile);
+                    }).Wait();
+
+                    Task.Run(async () =>
+                    {
+                        outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile);
+                    }).Wait();
+                }
+            }
+            catch (Exception exc)
+            {
+                string msg = dsutil.DSUtil.ErrMsg("Main", exc);
+                dsutil.DSUtil.WriteFile(logfile, msg, settings.UserName);
+                throw;
             }
         }
 
-        static void GetOrders(UserSettingsView settings, string logfile)
+        static async Task GetOrders(UserSettingsView settings, string logfile)
         {
             try
             {
@@ -90,6 +103,13 @@ namespace wm
                         msg.Add(o.DatePurchased.ToString());
                         msg.Add(o.Qty.ToString());
                         msg.Add("");
+
+                        // sync db qty
+                        var sellerListing = await ebayAPIs.GetSingleItem(settings, o.ListedItemID, false);
+                        var listing = db.ListingGet(o.ListedItemID);
+
+                        listing.Qty = sellerListing.Qty.Value;
+                        await db.ListingSaveAsync(settings, listing, false, "Qty");
                     }
                     SendAlertEmail(_toEmail, settings.StoreName + " ORDERS", msg);
                 }
@@ -98,6 +118,7 @@ namespace wm
             {
                 string msg = dsutil.DSUtil.ErrMsg("GetOrders", exc);
                 dsutil.DSUtil.WriteFile(logfile, msg, settings.UserName);
+                throw;
             }
         }
 
@@ -188,7 +209,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Farberware-Air-Fryer-Toaster-Oven/718543483")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Oreck-Commercial-XL2100RHS-Upright-Vacuum-Cleaner/21190412")
                         //{
                         //    continue;
                         //}
@@ -230,7 +251,7 @@ namespace wm
 
                                 int cnt = CountMsgID(listing.ID, 1000, daysBack);
                                 int total = CountMsgID(listing.ID, 0, daysBack);
-                                parseArrivalDateList.Add(string.Format("Parse arrival date: {0}/{1}", total));
+                                parseArrivalDateList.Add(string.Format("Parse arrival date: {0}/{1}", cnt, total));
                                 parseArrivalDateList.Add(string.Empty);
 
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 1000, UserID = settings.UserID };
@@ -323,7 +344,13 @@ namespace wm
                                     }
                                 }
                             }
-                            if (listing.Qty == 0 && !wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !lateDelivery && (wmItem.SoldAndShippedBySupplier ?? false))
+
+                            // PUT BACK IN STOCK
+                            if (listing.Qty == 0 
+                                && !wmItem.OutOfStock 
+                                && !wmItem.ShippingNotAvailable 
+                                && !lateDelivery 
+                                && (wmItem.SoldAndShippedBySupplier ?? false))
                             {
                                 var newListedQty = 1;
                                 ++putBackInStock;
@@ -331,7 +358,11 @@ namespace wm
                                 putBackInStockList.Add(listing.SupplierItem.ItemURL);
                                 putBackInStockList.Add(string.Empty);
                               
-                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: newListedQty);
+                                var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
+                                decimal newPrice = priceProfit.ProposePrice;
+                                listing.ListingPrice = newPrice;
+                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice, qty: newListedQty);
+
                                 if (response.Count > 0)
                                 {
                                     var output = dsutil.DSUtil.ListToDelimited(response, ';');
@@ -344,9 +375,15 @@ namespace wm
                                     await db.ListingLogAdd(log);
                                 }
                                 listing.Qty = newListedQty;
-                                await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                await db.ListingSaveAsync(settings, listing, false, "Qty", "ListingPrice");
                             }
-                            else
+
+                            // SUPPLIER PRICE CHANGE?
+                            if (listing.Qty > 0
+                                      && !wmItem.OutOfStock
+                                      && !wmItem.ShippingNotAvailable
+                                      && !lateDelivery
+                                      && (wmItem.SoldAndShippedBySupplier ?? false))
                             {
                                 if (Math.Round(wmItem.SupplierPrice.Value, 2) != Math.Round(listing.SupplierItem.SupplierPrice.Value, 2))
                                 {
@@ -475,10 +512,6 @@ namespace wm
             return count;
         }
 
-        void PutBackInStock()
-        {
-
-        }
         /// <summary>
         /// Compose status email.
         /// </summary>
