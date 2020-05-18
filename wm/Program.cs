@@ -1,16 +1,6 @@
 /*
  * Scan walmart and update price and inventory as needed.
  * 
- * 100   deliveryTooLongList
- * 200   outofStockBadArrivalList
- * 300   outofStockList
- * 400   shipNotAvailList
- * 500   invalidURLList
- * 600   putBackInStockList
- * 700   priceChangeList
-
- * 10000 error
-
  */
 using dsmodels;
 using System;
@@ -58,7 +48,6 @@ namespace wm
                     string userID = UserID(storeID);
                     string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
                     settings = db.GetUserSettingsView(connStr, userID, storeID);
-                    var pctProfit = settings.PctProfit;
                     var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
                     var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
                     int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
@@ -76,7 +65,7 @@ namespace wm
 
                     Task.Run(async () =>
                     {
-                        outofstock = await ScanItems(settings, _sourceID, pctProfit, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile, daysBack);
+                        outofstock = await ScanItems(settings, _sourceID, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile, daysBack);
                     }).Wait();
                 }
             }
@@ -157,7 +146,6 @@ namespace wm
         /// <returns></returns>
         public static async Task<int> ScanItems(UserSettingsView settings, 
             int sourceID, 
-            double pctProfit, 
             decimal wmShipping, 
             decimal wmFreeShippingMin, 
             double eBayPct, 
@@ -176,6 +164,7 @@ namespace wm
             int putBackInStock = 0;
             int deliveryTooLong = 0;
             int parseArrivalDate = 0;
+            int notWalmart = 0;
             var response = new List<string>();
             string body = null;
             int listingID = 0;
@@ -189,6 +178,7 @@ namespace wm
             var putBackInStockList = new List<string>();
             var deliveryTooLongList = new List<string>();
             var parseArrivalDateList = new List<string>();
+            var notWalmartList = new List<string>();
 
             try
             {
@@ -211,7 +201,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Flambeau-50-5-inch-Rifle-Shotgun-Case/969413734")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/ShelterLogic-Super-Max-12-x-20-White-Canopy-Enclosure-Kit/17665893")
                         //{
                         //    continue;
                         //}
@@ -259,6 +249,28 @@ namespace wm
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 1000, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
                             }
+                            if (!wmItem.SoldAndShippedBySupplier ?? false)
+                            {
+                                ++notWalmart;
+                                notWalmartList.Add(listing.ListingTitle);
+                                notWalmartList.Add(listing.SupplierItem.ItemURL);
+                                notWalmartList.Add(string.Empty);
+
+                                int cnt = CountMsgID(listing.ID, 1100, daysBack);
+                                int total = CountMsgID(listing.ID, 0, daysBack);
+                                notWalmartList.Add(string.Format("Not Walmart: {0}/{1}", cnt, total));
+                                notWalmartList.Add(string.Empty);
+
+                                if (listing.Qty > 0)
+                                {
+                                    listing.Qty = 0;
+                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                }
+
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 1100, UserID = settings.UserID };
+                                await db.ListingLogAdd(log);
+                            }
                             if (wmItem.ShippingNotAvailable)
                             {
                                 shipNotAvailList.Add(listing.ListingTitle);
@@ -274,7 +286,6 @@ namespace wm
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
                                 await db.ListingLogAdd(log);
 
-                                // but what if db=0 and ebay > 0 ?
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
@@ -348,7 +359,8 @@ namespace wm
                             }
 
                             // PUT BACK IN STOCK
-                            if (listing.Qty == 0 
+                            if (listing.Qty == 0
+                                && wmItem.Arrives.HasValue
                                 && !wmItem.OutOfStock 
                                 && !wmItem.ShippingNotAvailable 
                                 && !lateDelivery 
@@ -360,7 +372,7 @@ namespace wm
                                 putBackInStockList.Add(listing.SupplierItem.ItemURL);
                                 putBackInStockList.Add(string.Empty);
                               
-                                var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
+                                var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, listing.PctProfit, wmShipping, wmFreeShippingMin, eBayPct);
                                 decimal newPrice = priceProfit.ProposePrice;
                                 listing.ListingPrice = newPrice;
                                 response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice, qty: newListedQty);
@@ -410,7 +422,7 @@ namespace wm
                                     }
                                     dsutil.DSUtil.WriteFile(logfile, body, log_username);
 
-                                    var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, pctProfit, wmShipping, wmFreeShippingMin, eBayPct);
+                                    var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, listing.PctProfit, wmShipping, wmFreeShippingMin, eBayPct);
                                     decimal newPrice = priceProfit.ProposePrice;
                                     priceChangeList.Add(string.Format("New price: {0:c}", newPrice));
                                     note += string.Format(" New price: {0:c}", newPrice);
@@ -441,9 +453,6 @@ namespace wm
 
                 if (mispriceings > 0)
                 {
-                    foreach(var s in priceChangeList)
-                    {
-                    }
                     SendAlertEmail(_toEmail, settings.StoreName + " PRICE CHANGE", priceChangeList);
                 }
                 if (outofstock > 0)
@@ -465,7 +474,7 @@ namespace wm
                 if (putBackInStock > 0)
                 {
                     putBackInStockList.Add(string.Format("elapsed time: {0} minutes", Math.Round(elapsedMinutes, 2)));
-                    SendAlertEmail(_toEmail, settings.StoreName + " POSSIBLY RE-STOCK ", putBackInStockList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " RE-STOCK ", putBackInStockList);
                 }
                 if (deliveryTooLong > 0)
                 {
@@ -474,6 +483,10 @@ namespace wm
                 if (parseArrivalDate > 0)
                 {
                     SendAlertEmail(_toEmail, settings.StoreName + " PARSE ARRIVAL DATE - START SELENIUM ", parseArrivalDateList);
+                }
+                if (notWalmart > 0)
+                {
+                    SendAlertEmail(_toEmail, settings.StoreName + " NOT SOLD & SHIPPED BY SUPPLIER ", notWalmartList);
                 }
                 if (numErrors > 0)
                 {
