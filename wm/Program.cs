@@ -570,7 +570,7 @@ namespace wm
             var items = db.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
 
             bool putBackInStock = true;
-            if (items.Count >= daysLookBack * 12)
+            if (items.Count >= daysLookBack * 24)
             {
                 foreach (var i in items)
                 {
