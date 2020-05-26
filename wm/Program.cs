@@ -192,7 +192,7 @@ namespace wm
                 string token = db.GetToken(settings);
                 var walListings = db.Listings
                     .Include(d => d.SupplierItem)
-                    .Where(x => x.SupplierItem.SourceID == sourceID && x.Listed != null && x.StoreID == settings.StoreID && !x.InActive)
+                    .Where(x => x.SupplierItem.SourceID == sourceID && x.Listed != null && x.StoreID == settings.StoreID)
                     .ToList();
 
                 foreach (Listing listing in walListings)
@@ -364,6 +364,7 @@ namespace wm
 
                             // PUT BACK IN STOCK
                             if (listing.Qty == 0
+                                && !listing.InActive
                                 && wmItem.Arrives.HasValue
                                 && !wmItem.OutOfStock 
                                 && !wmItem.ShippingNotAvailable 
