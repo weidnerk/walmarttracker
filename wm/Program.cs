@@ -205,7 +205,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Chapin-International-Rechargeable-4-Gallon-20v-Battery-Sprayer/368665606")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Oreck-Commercial-XL2100RHS-Upright-Vacuum-Cleaner/21190412")
                         //{
                         //    continue;
                         //}
@@ -404,6 +404,30 @@ namespace wm
                                     notInStockLongEnoughList.Add(listing.ListingTitle);
                                     notInStockLongEnoughList.Add(listing.SupplierItem.ItemURL);
                                     notInStockLongEnoughList.Add(string.Empty);
+
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 1200, UserID = settings.UserID };
+                                    await db.ListingLogAdd(log);
+                                }
+                            }
+
+                            // inactive and might qualify to put back in stock
+                            if (listing.Qty == 0
+                              && listing.InActive
+                              && wmItem.Arrives.HasValue
+                              && !wmItem.OutOfStock
+                              && !wmItem.ShippingNotAvailable
+                              && !lateDelivery
+                              && (wmItem.SoldAndShippedBySupplier ?? false))
+                            {
+                                if (InStockLongEnough(listing.ID, 1))
+                                {
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 1300, UserID = settings.UserID };
+                                    await db.ListingLogAdd(log);
+                                }
+                                else
+                                {
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 1400, UserID = settings.UserID };
+                                    await db.ListingLogAdd(log);
                                 }
                             }
 
@@ -546,12 +570,19 @@ namespace wm
             var items = db.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
 
             bool putBackInStock = true;
-            foreach(var i in items)
+            if (items.Count >= daysLookBack * 12)
             {
-                if (i.MsgID != 600 || i.MsgID != 700)
+                foreach (var i in items)
                 {
-                    putBackInStock = false;
+                    if (i.MsgID != 600 || i.MsgID != 700)
+                    {
+                        putBackInStock = false;
+                    }
                 }
+            }
+            else
+            {
+                putBackInStock = false;
             }
             return putBackInStock;
         }
