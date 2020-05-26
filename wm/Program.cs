@@ -21,7 +21,6 @@ namespace wm
         static int _sourceID = 1;
 
         static DataModelsDB db = new DataModelsDB();
-        //readonly static string _logfile = "log.txt";
         const string log_username = "admin";
 
         // My ID is used for the tracker.
@@ -30,13 +29,14 @@ namespace wm
 
         static void Main(string[] args)
         {
+            byte forceSendEmail = 0;
             int daysBack = 21;
             UserSettingsView settings = null;
             string logfile = null;
             try 
             { 
                 int storeID;
-                if (args.Length != 3)
+                if (args.Length != 4)
                 {
                     Console.WriteLine("Invalid arguments.");
                 }
@@ -45,6 +45,7 @@ namespace wm
                     logfile = args[1];
                     storeID = Convert.ToInt32(args[0]);
                     daysBack = Convert.ToInt32(args[2]);
+                    forceSendEmail = Convert.ToByte(args[3]);
                     string userID = UserID(storeID);
                     string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
                     settings = db.GetUserSettingsView(connStr, userID, storeID);
@@ -65,7 +66,7 @@ namespace wm
 
                     Task.Run(async () =>
                     {
-                        outofstock = await ScanItems(settings, _sourceID, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile, daysBack);
+                        outofstock = await ScanItems(settings, _sourceID, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile, daysBack, forceSendEmail);
                     }).Wait();
                 }
             }
@@ -152,7 +153,8 @@ namespace wm
             int imgLimit,
             int allowedDeliveryDays,
             string logfile,
-            int daysBack)
+            int daysBack,
+            byte forceSendEmail)
         {
             int i = 0;
             int outofstock = 0;
@@ -162,6 +164,7 @@ namespace wm
             int mispriceings = 0;
             int numErrors = 0;
             int putBackInStock = 0;
+            int notInStockLongEnough = 0;
             int deliveryTooLong = 0;
             int parseArrivalDate = 0;
             int notWalmart = 0;
@@ -179,6 +182,7 @@ namespace wm
             var deliveryTooLongList = new List<string>();
             var parseArrivalDateList = new List<string>();
             var notWalmartList = new List<string>();
+            var notInStockLongEnoughList = new List<string>();
 
             try
             {
@@ -201,7 +205,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/ShelterLogic-Super-Max-12-x-20-White-Canopy-Enclosure-Kit/17665893")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Chapin-International-Rechargeable-4-Gallon-20v-Battery-Sprayer/368665606")
                         //{
                         //    continue;
                         //}
@@ -366,30 +370,40 @@ namespace wm
                                 && !lateDelivery 
                                 && (wmItem.SoldAndShippedBySupplier ?? false))
                             {
-                                var newListedQty = 1;
-                                ++putBackInStock;
-                                putBackInStockList.Add(listing.ListingTitle);
-                                putBackInStockList.Add(listing.SupplierItem.ItemURL);
-                                putBackInStockList.Add(string.Empty);
-                              
-                                var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, listing.PctProfit, wmShipping, wmFreeShippingMin, eBayPct);
-                                decimal newPrice = priceProfit.ProposePrice;
-                                listing.ListingPrice = newPrice;
-                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice, qty: newListedQty);
-
-                                if (response.Count > 0)
+                                if (InStockLongEnough(listing.ID, 1))
                                 {
-                                    var output = dsutil.DSUtil.ListToDelimited(response, ';');
-                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
-                                    await db.ListingLogAdd(log);
+                                    var newListedQty = 1;
+                                    ++putBackInStock;
+                                    putBackInStockList.Add(listing.ListingTitle);
+                                    putBackInStockList.Add(listing.SupplierItem.ItemURL);
+                                    putBackInStockList.Add(string.Empty);
+
+                                    var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, listing.PctProfit, wmShipping, wmFreeShippingMin, eBayPct);
+                                    decimal newPrice = priceProfit.ProposePrice;
+                                    listing.ListingPrice = newPrice;
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice, qty: newListedQty);
+
+                                    if (response.Count > 0)
+                                    {
+                                        var output = dsutil.DSUtil.ListToDelimited(response, ';');
+                                        var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
+                                        await db.ListingLogAdd(log);
+                                    }
+                                    else
+                                    {
+                                        var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID };
+                                        await db.ListingLogAdd(log);
+                                    }
+                                    listing.Qty = newListedQty;
+                                    await db.ListingSaveAsync(settings, listing, false, "Qty", "ListingPrice");
                                 }
                                 else
                                 {
-                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID };
-                                    await db.ListingLogAdd(log);
+                                    ++notInStockLongEnough;
+                                    notInStockLongEnoughList.Add(listing.ListingTitle);
+                                    notInStockLongEnoughList.Add(listing.SupplierItem.ItemURL);
+                                    notInStockLongEnoughList.Add(string.Empty);
                                 }
-                                listing.Qty = newListedQty;
-                                await db.ListingSaveAsync(settings, listing, false, "Qty", "ListingPrice");
                             }
 
                             // SUPPLIER PRICE CHANGE?
@@ -451,50 +465,69 @@ namespace wm
                 endTime = DateTime.Now;
                 double elapsedMinutes = ((TimeSpan)(endTime - startTime)).TotalMinutes;
 
-                if (mispriceings > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " PRICE CHANGE", priceChangeList);
-                }
-                if (outofstock > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " OUT OF STOCK - LABEL", outofStockList);
-                }
-                if (outofstockBadArrivalDate > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " OUT OF STOCK - Bad Arrival Date", outofStockBadArrivalList);
-                }
-                if (invalidURL > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " INVALID URL ", invalidURLList);
-                }
-                if (shippingNotAvailable > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY NOT AVAILABLE ", shipNotAvailList);
-                }
+                var elapsedMinutesList = new List<string>();
+                elapsedMinutesList.Add(string.Format("Elapsed time: {0} minutes", Math.Round(elapsedMinutes, 2)));
+                SendAlertEmail(_toEmail, settings.StoreName + " ELAPSED TIME ", elapsedMinutesList);
+
                 if (putBackInStock > 0)
                 {
-                    putBackInStockList.Add(string.Format("elapsed time: {0} minutes", Math.Round(elapsedMinutes, 2)));
                     SendAlertEmail(_toEmail, settings.StoreName + " RE-STOCK ", putBackInStockList);
                 }
-                if (deliveryTooLong > 0)
+                if (notInStockLongEnough > 0)
                 {
-                    SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY TOO LONG ", deliveryTooLongList);
-                }
-                if (parseArrivalDate > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " PARSE ARRIVAL DATE - START SELENIUM ", parseArrivalDateList);
-                }
-                if (notWalmart > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " NOT SOLD & SHIPPED BY SUPPLIER ", notWalmartList);
+                    SendAlertEmail(_toEmail, settings.StoreName + " NOT IN-STOCK LONG ENOUGH ", notInStockLongEnoughList);
                 }
                 if (numErrors > 0)
                 {
                     SendAlertEmail(_toEmail, settings.StoreName + " TRACKER ERRORS ", errors);
                 }
-                if (mispriceings + outofstock + invalidURL + shippingNotAvailable + numErrors + putBackInStock == 0)
+
+                var sendEmail = false;
+                var rightNow = DateTime.Now;
+                if ((rightNow.Hour >= 8 && rightNow.Hour < 9) || forceSendEmail == 1)
                 {
-                    string ret = dsutil.DSUtil.SendMailDev(_toEmail, string.Format("REPRICER - scanned {0} items", walListings.Count), "No issues found.");
+                    sendEmail = true;
+                }
+                if (sendEmail)
+                {
+                    if (mispriceings > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " PRICE CHANGE", priceChangeList);
+                    }
+                    if (outofstock > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " OUT OF STOCK - LABEL", outofStockList);
+                    }
+                    if (outofstockBadArrivalDate > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " OUT OF STOCK - Bad Arrival Date", outofStockBadArrivalList);
+                    }
+                    if (invalidURL > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " INVALID URL ", invalidURLList);
+                    }
+                    if (shippingNotAvailable > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY NOT AVAILABLE ", shipNotAvailList);
+                    }
+                   
+                    if (deliveryTooLong > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY TOO LONG ", deliveryTooLongList);
+                    }
+                    if (parseArrivalDate > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " PARSE ARRIVAL DATE - START SELENIUM ", parseArrivalDateList);
+                    }
+                    if (notWalmart > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " NOT SOLD & SHIPPED BY SUPPLIER ", notWalmartList);
+                    }
+                   
+                    if (mispriceings + outofstock + invalidURL + shippingNotAvailable + numErrors + putBackInStock == 0)
+                    {
+                        string ret = dsutil.DSUtil.SendMailDev(_toEmail, string.Format(settings.StoreName + "REPRICER - scanned {0} items", walListings.Count), "No issues found.");
+                    }
                 }
                 return outofstock;
             }
@@ -506,6 +539,21 @@ namespace wm
             }
         }
 
+        protected static bool InStockLongEnough(int listingID, int daysLookBack)
+        {
+            var back = DateTime.Now.AddDays(-daysLookBack);
+            var items = db.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
+
+            bool putBackInStock = true;
+            foreach(var i in items)
+            {
+                if (i.MsgID != 600 || i.MsgID != 700)
+                {
+                    putBackInStock = false;
+                }
+            }
+            return putBackInStock;
+        }
         /// <summary>
         /// How many times has msgID appeard in last x times
         /// </summary>
