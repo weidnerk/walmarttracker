@@ -12,6 +12,7 @@ using System.Data.Entity;
 using System.Threading;
 using eBayUtility;
 using System.Data.Entity.Migrations.Infrastructure;
+using System.Globalization;
 
 namespace wm
 {
@@ -205,7 +206,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Oreck-Commercial-XL2100RHS-Upright-Vacuum-Cleaner/21190412")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Mainstays-Stainless-Steel-8-Quart-Multi-Cooker-with-Lid/43160424")
                         //{
                         //    continue;
                         //}
@@ -371,7 +372,10 @@ namespace wm
                                 && !lateDelivery 
                                 && (wmItem.SoldAndShippedBySupplier ?? false))
                             {
-                                if (InStockLongEnough(listing.ID, 1))
+                                string msg = null;
+                                bool inStockLongEnough = InStockLongEnough(listing.ID, 1, out msg);
+                                string output = msg + " ";
+                                if (inStockLongEnough)
                                 {
                                     var newListedQty = 1;
                                     ++putBackInStock;
@@ -386,13 +390,13 @@ namespace wm
 
                                     if (response.Count > 0)
                                     {
-                                        var output = dsutil.DSUtil.ListToDelimited(response, ';');
+                                        output += dsutil.DSUtil.ListToDelimited(response, ';');
                                         var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
                                         await db.ListingLogAdd(log);
                                     }
                                     else
                                     {
-                                        var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID };
+                                        var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
                                         await db.ListingLogAdd(log);
                                     }
                                     listing.Qty = newListedQty;
@@ -405,7 +409,7 @@ namespace wm
                                     notInStockLongEnoughList.Add(listing.SupplierItem.ItemURL);
                                     notInStockLongEnoughList.Add(string.Empty);
 
-                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 1200, UserID = settings.UserID };
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 1200, UserID = settings.UserID, Note = output };
                                     await db.ListingLogAdd(log);
                                 }
                             }
@@ -419,7 +423,8 @@ namespace wm
                               && !lateDelivery
                               && (wmItem.SoldAndShippedBySupplier ?? false))
                             {
-                                if (InStockLongEnough(listing.ID, 1))
+                                string msg = null;
+                                if (InStockLongEnough(listing.ID, 1, out msg))
                                 {
                                     var log = new ListingLog { ListingID = listing.ID, MsgID = 1300, UserID = settings.UserID };
                                     await db.ListingLogAdd(log);
@@ -564,13 +569,13 @@ namespace wm
             }
         }
 
-        protected static bool InStockLongEnough(int listingID, int daysLookBack)
+        protected static bool InStockLongEnough_orig(int listingID, int daysLookBack)
         {
             var back = DateTime.Now.AddDays(-daysLookBack);
             var items = db.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
 
             bool putBackInStock = true;
-            if (items.Count >= daysLookBack * 24)
+            if (items.Count >= daysLookBack * 24)       // need at least hourly scan for a day
             {
                 foreach (var i in items)
                 {
@@ -586,6 +591,38 @@ namespace wm
             }
             return putBackInStock;
         }
+
+        /// <summary>
+        /// Called if trying to put an item back in stock.
+        /// </summary>
+        /// <param name="listingID"></param>
+        /// <param name="daysLookBack"></param>
+        /// <returns>null if cannot put back in stock</returns>
+        protected static bool InStockLongEnough(int listingID, int daysLookBack, out string msg)
+        {
+            string ret = null;
+            var back = DateTime.Now.AddDays(-daysLookBack);
+            var items = db.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
+
+            byte defect = 0;
+            bool putBackInStock = false;
+
+            foreach (var i in items)
+            {
+                if (i.MsgID != 600 && i.MsgID != 700 && i.MsgID != 1200)
+                {
+                    ++defect;
+                }
+            }
+            double defectRate = ((double)defect / (double)items.Count) * 100.0;
+            if (defectRate < 20)
+            {
+                putBackInStock = true;
+            }
+            msg = items.Count + " data points;";
+            msg = string.Format("Data points: {0}; Defect rate: {1}%", items.Count, Math.Round(defectRate, 2));
+            return putBackInStock;
+        } 
         /// <summary>
         /// How many times has msgID appeard in last x times
         /// </summary>
