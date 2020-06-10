@@ -482,31 +482,30 @@ namespace wm
                     }
                     catch (Exception exc)
                     {
-                        ++numErrors;
-                        var log = new ListingLog { ListingID = listing.ID, MsgID = 10000, UserID = settings.UserID };
-                        await db.ListingLogAdd(log);
-
                         string msg = "ERROR IN LOOP -> " + listing.ListingTitle + " -> " + exc.Message;
                         errors.Add(msg);
                         dsutil.DSUtil.WriteFile(logfile, msg, "");
+
+                        ++numErrors;
+                        var log = new ListingLog { ListingID = listing.ID, MsgID = 10000, UserID = settings.UserID, Note = exc.Message };
+                        await db.ListingLogAdd(log);
+                        
+                        if (listing.Qty > 0)
+                        {
+                            listing.Qty = 0;
+                            await db.ListingSaveAsync(settings, listing, false, "Qty");
+                            response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                        }
                     }
-                }
+                }   // end for loop
 
                 endTime = DateTime.Now;
                 double elapsedMinutes = ((TimeSpan)(endTime - startTime)).TotalMinutes;
 
                 var elapsedMinutesList = new List<string>();
-                elapsedMinutesList.Add(string.Format("Elapsed time: {0} minutes", Math.Round(elapsedMinutes, 2)));
+                elapsedMinutesList.Add(string.Format("Elapsed time: {0} minutes; Total scanned {1}", Math.Round(elapsedMinutes, 2), i));
                 SendAlertEmail(_toEmail, settings.StoreName + " ELAPSED TIME ", elapsedMinutesList);
-
-                if (putBackInStock > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " RE-STOCK ", putBackInStockList);
-                }
-                if (notInStockLongEnough > 0)
-                {
-                    SendAlertEmail(_toEmail, settings.StoreName + " NOT IN-STOCK LONG ENOUGH ", notInStockLongEnoughList);
-                }
+               
                 if (numErrors > 0)
                 {
                     SendAlertEmail(_toEmail, settings.StoreName + " TRACKER ERRORS ", errors);
@@ -520,6 +519,14 @@ namespace wm
                 }
                 if (sendEmail)
                 {
+                    if (putBackInStock > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " RE-STOCK ", putBackInStockList);
+                    }
+                    if (notInStockLongEnough > 0)
+                    {
+                        SendAlertEmail(_toEmail, settings.StoreName + " NOT IN-STOCK LONG ENOUGH ", notInStockLongEnoughList);
+                    }
                     if (mispriceings > 0)
                     {
                         SendAlertEmail(_toEmail, settings.StoreName + " PRICE CHANGE", priceChangeList);
