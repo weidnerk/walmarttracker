@@ -39,7 +39,7 @@ namespace wm
                 int storeID;
                 if (args.Length != 4)
                 {
-                    Console.WriteLine("Invalid arguments.");
+                    Console.WriteLine("Invalid arguments: wm [storeID] [logfile] [daysBack] [forceEmail(0,1)]");
                 }
                 else
                 {
@@ -122,6 +122,11 @@ namespace wm
         /// <returns></returns>
         protected static string UserID(int storeID)
         {
+            /*
+             * Instead of this, add RepriceAccount bit flag to UserProfile.
+             * 
+             */
+
             string userID = null;
             switch (storeID)
             {
@@ -339,7 +344,7 @@ namespace wm
                                     ++deliveryTooLong;
                                     deliveryTooLongList.Add(listing.ListingTitle);
                                     deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
-                                    deliveryTooLongList.Add(string.Format("{0} days, over by {1} days(s)", days, days - allowedDeliveryDays));
+                                    deliveryTooLongList.Add(string.Format("{0} business days, over by {1} days(s)", days, days - allowedDeliveryDays));
                                     var note = string.Format("{0} days", days);
                                     deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
                                     note += string.Format(" (Qty was {0})", listing.Qty);
