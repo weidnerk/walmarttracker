@@ -344,7 +344,7 @@ namespace wm
                                     ++deliveryTooLong;
                                     deliveryTooLongList.Add(listing.ListingTitle);
                                     deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
-                                    deliveryTooLongList.Add(string.Format("{0} business days, over by {1} days(s)", days, days - allowedDeliveryDays));
+                                    deliveryTooLongList.Add(string.Format("{0} business days, over by {1} day(s)", days, days - allowedDeliveryDays));
                                     var note = string.Format("{0} days", days);
                                     deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
                                     note += string.Format(" (Qty was {0})", listing.Qty);
@@ -508,7 +508,8 @@ namespace wm
                 double elapsedMinutes = ((TimeSpan)(endTime - startTime)).TotalMinutes;
 
                 var elapsedMinutesList = new List<string>();
-                elapsedMinutesList.Add(string.Format("Elapsed time: {0} minutes; Total scanned {1}", Math.Round(elapsedMinutes, 2), i));
+                var elapsedTimeMsg = string.Format("Elapsed time: {0} minutes; Total scanned {1}", Math.Round(elapsedMinutes, 2), i);
+                elapsedMinutesList.Add(elapsedTimeMsg);
                 SendAlertEmail(_toEmail, settings.StoreName + " ELAPSED TIME ", elapsedMinutesList);
                
                 if (numErrors > 0)
