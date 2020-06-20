@@ -24,10 +24,6 @@ namespace wm
         static DataModelsDB db = new DataModelsDB();
         const string log_username = "admin";
 
-        // My ID is used for the tracker.
-        readonly static string HOME_DECOR_USER_ID = "65e09eec-a014-4526-a569-9f2d3600aa89";
-        readonly static string EAGLE_USER_ID = "56aba33d-b046-41fb-b647-5bb42174a58b";
-
         static void Main(string[] args)
         {
             byte forceSendEmail = 0;
@@ -48,27 +44,34 @@ namespace wm
                     daysBack = Convert.ToInt32(args[2]);
                     forceSendEmail = Convert.ToByte(args[3]);
                     string userID = UserID(storeID);
-                    string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
-                    settings = db.GetUserSettingsView(connStr, userID, storeID);
-                    var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
-                    var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
-                    int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
-
-                    byte handlingTime = settings.HandlingTime;
-                    byte maxShippingDays = settings.MaxShippingDays;
-                    var allowedDeliveryDays = handlingTime + maxShippingDays;
-
-                    int outofstock = 0;
-
-                    Task.Run(async () =>
-                    { 
-                        await GetOrders(settings, logfile);
-                    }).Wait();
-
-                    Task.Run(async () =>
+                    if (!string.IsNullOrEmpty(userID))
                     {
-                        outofstock = await ScanItems(settings, _sourceID, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile, daysBack, forceSendEmail);
-                    }).Wait();
+                        string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
+                        settings = db.GetUserSettingsView(connStr, userID, storeID);
+                        var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
+                        var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
+                        int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
+
+                        byte handlingTime = settings.HandlingTime;
+                        byte maxShippingDays = settings.MaxShippingDays;
+                        var allowedDeliveryDays = handlingTime + maxShippingDays;
+
+                        int outofstock = 0;
+
+                        Task.Run(async () =>
+                        {
+                            await GetOrders(settings, logfile);
+                        }).Wait();
+
+                        Task.Run(async () =>
+                        {
+                            outofstock = await ScanItems(settings, _sourceID, wmShipping, wmFreeShippingMin, settings.FinalValueFeePct, imgLimit, allowedDeliveryDays, logfile, daysBack, forceSendEmail);
+                        }).Wait();
+                    }
+                    else
+                    {
+                        Console.WriteLine("Could not find a user with RepricerEmail flag set for this store.");
+                    }
                 }
             }
             catch (Exception exc)
@@ -122,22 +125,12 @@ namespace wm
         /// <returns></returns>
         protected static string UserID(int storeID)
         {
-            /*
-             * Instead of this, add RepriceAccount bit flag to UserProfile.
-             * 
-             */
-
-            string userID = null;
-            switch (storeID)
+            var r = db.UserSettingsView.Where(p => p.RepricerEmail && p.StoreID == storeID).FirstOrDefault();
+            if (r != null)
             {
-                case 1:
-                    userID = HOME_DECOR_USER_ID;
-                    break;
-                case 4:
-                    userID = EAGLE_USER_ID;
-                    break;
+                return r.UserID;
             }
-            return userID;
+            return null;
         }
 
         /// <summary>
@@ -503,6 +496,9 @@ namespace wm
                         }
                     }
                 }   // end for loop
+
+                var storeProfile = new StoreProfile { ID = settings.StoreID, RepricerLastRan = DateTime.Now };
+                await db.StoreProfileUpdate(storeProfile, "RepricerLastRan");
 
                 endTime = DateTime.Now;
                 double elapsedMinutes = ((TimeSpan)(endTime - startTime)).TotalMinutes;
