@@ -60,7 +60,7 @@ namespace wm
 
                         Task.Run(async () =>
                         {
-                            await GetOrders(settings, logfile);
+                            await GetOrders(settings, logfile, 0.0915);
                         }).Wait();
 
                         Task.Run(async () =>
@@ -81,13 +81,13 @@ namespace wm
             }
         }
 
-        static async Task GetOrders(UserSettingsView settings, string logfile)
+        static async Task GetOrders(UserSettingsView settings, string logfile, double finalValueFeePct)
         {
             try
             {
                 DateTime ed = DateTime.Now;
                 DateTime sd = ed.AddHours(-3);
-                var orders = ebayAPIs.GetOrdersByDate(settings, sd, ed);
+                var orders = ebayAPIs.GetOrdersByDate(settings, sd, ed, finalValueFeePct, "");
                 if (orders.Count > 0)
                 {
                     var msg = new List<string>();
@@ -497,16 +497,15 @@ namespace wm
                     }
                 }   // end for loop
 
-                var storeProfile = new StoreProfile { ID = settings.StoreID, RepricerLastRan = DateTime.Now };
-                await db.StoreProfileUpdate(storeProfile, "RepricerLastRan");
-
                 endTime = DateTime.Now;
                 double elapsedMinutes = ((TimeSpan)(endTime - startTime)).TotalMinutes;
+                var storeProfile = new StoreProfile { ID = settings.StoreID, RepricerLastRan = DateTime.Now, ElapsedTime = elapsedMinutes };
+                await db.StoreProfileUpdate(storeProfile, "RepricerLastRan", "ElapsedTime");
 
                 var elapsedMinutesList = new List<string>();
                 var elapsedTimeMsg = string.Format("Elapsed time: {0} minutes; Total scanned {1}", Math.Round(elapsedMinutes, 2), i);
                 elapsedMinutesList.Add(elapsedTimeMsg);
-                SendAlertEmail(_toEmail, settings.StoreName + " ELAPSED TIME ", elapsedMinutesList);
+                //SendAlertEmail(_toEmail, settings.StoreName + " ELAPSED TIME ", elapsedMinutesList);
                
                 if (numErrors > 0)
                 {
