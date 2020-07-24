@@ -21,7 +21,7 @@ namespace wm
         static string _toEmail = "ventures2019@gmail.com";
         static int _sourceID = 1;
 
-        static DataModelsDB db = new DataModelsDB();
+        static IRepository _repository = new Repository();
         const string log_username = "admin";
 
         static void Main(string[] args)
@@ -47,10 +47,18 @@ namespace wm
                     if (!string.IsNullOrEmpty(userID))
                     {
                         string connStr = ConfigurationManager.ConnectionStrings["OPWContext"].ConnectionString;
-                        settings = db.GetUserSettingsView(connStr, userID, storeID);
-                        var wmShipping = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart shipping"));
-                        var wmFreeShippingMin = Convert.ToDecimal(db.GetAppSetting(settings, "Walmart free shipping min"));
-                        int imgLimit = Convert.ToInt32(db.GetAppSetting(settings, "Listing Image Limit"));
+
+                        ebayAPIs.Init(_repository);
+                        //eBayItem.Init(_repository);
+                        //eBayItemVariation.Init(_repository);
+                        FetchSeller.Init(_repository);
+                        //StoreCheck.Init(_repository);
+                        wallib.wmUtility.Init(_repository);
+
+                        settings = _repository.GetUserSettingsView(connStr, userID, storeID);
+                        var wmShipping = Convert.ToDecimal(_repository.GetAppSetting(settings, "Walmart shipping"));
+                        var wmFreeShippingMin = Convert.ToDecimal(_repository.GetAppSetting(settings, "Walmart free shipping min"));
+                        int imgLimit = Convert.ToInt32(_repository.GetAppSetting(settings, "Listing Image Limit"));
 
                         byte handlingTime = settings.HandlingTime;
                         byte maxShippingDays = settings.MaxShippingDays;
@@ -95,10 +103,10 @@ namespace wm
                     {
                         // sync db qty
                         var sellerListing = await ebayAPIs.GetSingleItem(settings, o.ListedItemID, false);
-                        var listing = db.ListingGet(o.ListedItemID);
+                        var listing = _repository.ListingGet(o.ListedItemID);
 
                         listing.Qty = sellerListing.Qty.Value;
-                        await db.ListingSaveAsync(settings, listing, false, "Qty");
+                        await _repository.ListingSaveAsync(settings, listing, false, "Qty");
 
                         msg.Add(o.ListedItemID);
                         msg.Add(listing.ListingTitle);
@@ -125,7 +133,7 @@ namespace wm
         /// <returns></returns>
         protected static string UserID(int storeID)
         {
-            var r = db.UserSettingsView.Where(p => p.RepricerEmail && p.StoreID == storeID).FirstOrDefault();
+            var r = _repository.Context.UserSettingsView.Where(p => p.RepricerEmail && p.StoreID == storeID).FirstOrDefault();
             if (r != null)
             {
                 return r.UserID;
@@ -188,8 +196,8 @@ namespace wm
                 DateTime startTime, endTime;
                 startTime = DateTime.Now;
 
-                string token = db.GetToken(settings);
-                var walListings = db.Listings
+                string token = _repository.GetToken(settings);
+                var walListings = _repository.Context.Listings
                     .Include(d => d.SupplierItem)
                     .Where(x => x.SupplierItem.SourceID == sourceID && x.Listed != null && x.StoreID == settings.StoreID)
                     .ToList();
@@ -204,7 +212,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Mainstays-Stainless-Steel-8-Quart-Multi-Cooker-with-Lid/43160424")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Briggs-Stratton-8-Gallon-Hotdog-Oil-free-Air-Compressor/800727967")
                         //{
                         //    continue;
                         //}
@@ -225,12 +233,12 @@ namespace wm
 
                             ++invalidURL;
                             var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
-                            await db.ListingLogAdd(log);
+                            await _repository.ListingLogAdd(log);
 
                             if (listing.Qty > 0)
                             {
                                 listing.Qty = 0;
-                                await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                 response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                             }
                         }
@@ -250,7 +258,7 @@ namespace wm
                                 parseArrivalDateList.Add(string.Empty);
 
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 1000, UserID = settings.UserID };
-                                await db.ListingLogAdd(log);
+                                await _repository.ListingLogAdd(log);
                             }
                             if (!wmItem.SoldAndShippedBySupplier ?? false)
                             {
@@ -267,12 +275,12 @@ namespace wm
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }
 
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 1100, UserID = settings.UserID };
-                                await db.ListingLogAdd(log);
+                                await _repository.ListingLogAdd(log);
                             }
                             if (wmItem.ShippingNotAvailable)
                             {
@@ -287,12 +295,12 @@ namespace wm
 
                                 ++shippingNotAvailable;
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
-                                await db.ListingLogAdd(log);
+                                await _repository.ListingLogAdd(log);
 
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }
                             }
@@ -301,7 +309,7 @@ namespace wm
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }                              
                                 outofStockList.Add(listing.ListingTitle);
@@ -309,7 +317,7 @@ namespace wm
                                 outofStockList.Add(string.Empty);
                                 ++outofstock;
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
-                                await db.ListingLogAdd(log);
+                                await _repository.ListingLogAdd(log);
 
                             }
                             if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
@@ -317,7 +325,7 @@ namespace wm
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
-                                    await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }                             
                                 outofStockBadArrivalList.Add(listing.ListingTitle);
@@ -325,7 +333,7 @@ namespace wm
                                 outofStockBadArrivalList.Add(string.Empty);
                                 ++outofstockBadArrivalDate;
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
-                                await db.ListingLogAdd(log);
+                                await _repository.ListingLogAdd(log);
                             }
                             bool lateDelivery = false;
                             if (wmItem.Arrives.HasValue)
@@ -350,12 +358,12 @@ namespace wm
 
                                     note += string.Format(" (Qty was {0})", listing.Qty);
                                     var log = new ListingLog { ListingID = listing.ID, MsgID = 100, Note = note, UserID = settings.UserID };
-                                    await db.ListingLogAdd(log);
+                                    await _repository.ListingLogAdd(log);
 
                                     if (listing.Qty > 0)
                                     {
                                         listing.Qty = 0;
-                                        await db.ListingSaveAsync(settings, listing, false, "Qty");
+                                        await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                         response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                     }
                                 }
@@ -390,15 +398,15 @@ namespace wm
                                     {
                                         output += dsutil.DSUtil.ListToDelimited(response, ';');
                                         var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
-                                        await db.ListingLogAdd(log);
+                                        await _repository.ListingLogAdd(log);
                                     }
                                     else
                                     {
                                         var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
-                                        await db.ListingLogAdd(log);
+                                        await _repository.ListingLogAdd(log);
                                     }
                                     listing.Qty = newListedQty;
-                                    await db.ListingSaveAsync(settings, listing, false, "Qty", "ListingPrice");
+                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty", "ListingPrice");
                                 }
                                 else
                                 {
@@ -408,7 +416,7 @@ namespace wm
                                     notInStockLongEnoughList.Add(string.Empty);
 
                                     var log = new ListingLog { ListingID = listing.ID, MsgID = 1200, UserID = settings.UserID, Note = output };
-                                    await db.ListingLogAdd(log);
+                                    await _repository.ListingLogAdd(log);
                                 }
                             }
 
@@ -425,12 +433,12 @@ namespace wm
                                 if (InStockLongEnough(listing.ID, 1, out msg))
                                 {
                                     var log = new ListingLog { ListingID = listing.ID, MsgID = 1300, UserID = settings.UserID };
-                                    await db.ListingLogAdd(log);
+                                    await _repository.ListingLogAdd(log);
                                 }
                                 else
                                 {
                                     var log = new ListingLog { ListingID = listing.ID, MsgID = 1400, UserID = settings.UserID };
-                                    await db.ListingLogAdd(log);
+                                    await _repository.ListingLogAdd(log);
                                 }
                             }
 
@@ -470,10 +478,10 @@ namespace wm
                                     note += string.Format(" New price: {0:c}", newPrice);
                                     priceChangeList.Add(string.Empty);
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice);
-                                    await db.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
+                                    await _repository.UpdatePrice(listing, (decimal)newPrice, wmItem.SupplierPrice.Value);
                                     ++mispriceings;
                                     var log = new ListingLog { ListingID = listing.ID, MsgID = 700, Note = note, UserID = settings.UserID };
-                                    await db.ListingLogAdd(log);
+                                    await _repository.ListingLogAdd(log);
                                 }
                             }
                         }
@@ -486,12 +494,12 @@ namespace wm
 
                         ++numErrors;
                         var log = new ListingLog { ListingID = listing.ID, MsgID = 10000, UserID = settings.UserID, Note = exc.Message };
-                        await db.ListingLogAdd(log);
+                        await _repository.ListingLogAdd(log);
                         
                         if (listing.Qty > 0)
                         {
                             listing.Qty = 0;
-                            await db.ListingSaveAsync(settings, listing, false, "Qty");
+                            await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                             response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                         }
                     }
@@ -500,7 +508,7 @@ namespace wm
                 endTime = DateTime.Now;
                 double elapsedMinutes = ((TimeSpan)(endTime - startTime)).TotalMinutes;
                 var storeProfile = new StoreProfile { ID = settings.StoreID, RepricerLastRan = DateTime.Now, ElapsedTime = elapsedMinutes };
-                await db.StoreProfileUpdate(storeProfile, "RepricerLastRan", "ElapsedTime");
+                await _repository.StoreProfileUpdate(storeProfile, "RepricerLastRan", "ElapsedTime");
 
                 var elapsedMinutesList = new List<string>();
                 var elapsedTimeMsg = string.Format("Elapsed time: {0} minutes; Total scanned {1}", Math.Round(elapsedMinutes, 2), i);
@@ -580,7 +588,7 @@ namespace wm
         protected static bool InStockLongEnough_orig(int listingID, int daysLookBack)
         {
             var back = DateTime.Now.AddDays(-daysLookBack);
-            var items = db.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
+            var items = _repository.Context.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
 
             bool putBackInStock = true;
             if (items.Count >= daysLookBack * 24)       // need at least hourly scan for a day
@@ -610,7 +618,7 @@ namespace wm
         {
             string ret = null;
             var back = DateTime.Now.AddDays(-daysLookBack);
-            var items = db.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
+            var items = _repository.Context.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
 
             byte defect = 0;
             bool putBackInStock = false;
@@ -623,6 +631,7 @@ namespace wm
                 }
             }
             double defectRate = ((double)defect / (double)items.Count) * 100.0;
+            //defectRate = 19;
             if (defectRate < 20)
             {
                 putBackInStock = true;
@@ -643,11 +652,11 @@ namespace wm
             int count = 0;
             if (msgID > 0)
             {
-                count = db.ListingLogs.Where(x => x.ListingID == listingID && x.Created > twoWeeks && x.MsgID == msgID).Count();
+                count = _repository.Context.ListingLogs.Where(x => x.ListingID == listingID && x.Created > twoWeeks && x.MsgID == msgID).Count();
             }
             else
             {
-                count = db.ListingLogs.Where(x => x.ListingID == listingID && x.Created > twoWeeks).Count();
+                count = _repository.Context.ListingLogs.Where(x => x.ListingID == listingID && x.Created > twoWeeks).Count();
             }
             return count;
         }
