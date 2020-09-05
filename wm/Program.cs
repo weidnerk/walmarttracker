@@ -3,16 +3,14 @@
  * 
  */
 using dsmodels;
+using eBayUtility;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Data.Entity;
+using System.Linq;
 using System.Threading;
-using eBayUtility;
-using System.Data.Entity.Migrations.Infrastructure;
-using System.Globalization;
+using System.Threading.Tasks;
 
 namespace wm
 {
@@ -221,6 +219,7 @@ namespace wm
                         Console.WriteLine((++i) + " " + listing.ListingTitle);
                         if (wmItem == null)  // could not fetch from walmart website
                         {
+                            ++invalidURL;
                             invalidURLList.Add(listing.ListingTitle);
                             invalidURLList.Add(listing.SupplierItem.ItemURL);
                             invalidURLList.Add(string.Format("Qty was {0}", listing.Qty));
@@ -231,7 +230,6 @@ namespace wm
                             invalidURLList.Add(string.Format("Invalid URL: {0}/{1}", cnt, total));
                             invalidURLList.Add(string.Empty);
 
-                            ++invalidURL;
                             var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
                             await _repository.ListingLogAdd(log);
 
@@ -284,6 +282,7 @@ namespace wm
                             }
                             if (wmItem.ShippingNotAvailable)
                             {
+                                ++shippingNotAvailable;
                                 shipNotAvailList.Add(listing.ListingTitle);
                                 shipNotAvailList.Add(listing.SupplierItem.ItemURL);
                                 shipNotAvailList.Add(string.Empty);
@@ -293,7 +292,6 @@ namespace wm
                                 shipNotAvailList.Add(string.Format("Delivery not available: {0}/{1}", cnt, total));
                                 shipNotAvailList.Add(string.Empty);
 
-                                ++shippingNotAvailable;
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
                                 await _repository.ListingLogAdd(log);
 
@@ -306,34 +304,37 @@ namespace wm
                             }
                             if (!wmItem.ShippingNotAvailable && wmItem.OutOfStock)
                             {
-                                if (listing.Qty > 0)
-                                {
-                                    listing.Qty = 0;
-                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                }                              
+                                ++outofstock;
                                 outofStockList.Add(listing.ListingTitle);
                                 outofStockList.Add(listing.SupplierItem.ItemURL);
                                 outofStockList.Add(string.Empty);
-                                ++outofstock;
+
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
                                 await _repository.ListingLogAdd(log);
 
-                            }
-                            if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
-                            {
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
                                     await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                }                             
+                                }
+                            }
+                            if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
+                            {
+                                ++outofstockBadArrivalDate;
                                 outofStockBadArrivalList.Add(listing.ListingTitle);
                                 outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
                                 outofStockBadArrivalList.Add(string.Empty);
-                                ++outofstockBadArrivalDate;
+                                
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
                                 await _repository.ListingLogAdd(log);
+
+                                if (listing.Qty > 0)
+                                {
+                                    listing.Qty = 0;
+                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
+                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                                }
                             }
                             bool lateDelivery = false;
                             if (wmItem.Arrives.HasValue)
@@ -383,6 +384,7 @@ namespace wm
                                 string output = msg + " ";
                                 if (inStockLongEnough)
                                 {
+                                    Console.WriteLine("Put back in stock.");
                                     var newListedQty = 1;
                                     ++putBackInStock;
                                     putBackInStockList.Add(listing.ListingTitle);
@@ -391,20 +393,17 @@ namespace wm
 
                                     var priceProfit = wallib.wmUtility.wmNewPrice(wmItem.SupplierPrice.Value, listing.PctProfit, wmShipping, wmFreeShippingMin, eBayPct);
                                     decimal newPrice = priceProfit.ProposePrice;
+                                    output += string.Format(" Price: {0:0.00} ", newPrice); 
                                     listing.ListingPrice = newPrice;
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, price: (double)newPrice, qty: newListedQty);
 
                                     if (response.Count > 0)
                                     {
                                         output += dsutil.DSUtil.ListToDelimited(response, ';');
-                                        var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
-                                        await _repository.ListingLogAdd(log);
                                     }
-                                    else
-                                    {
-                                        var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
-                                        await _repository.ListingLogAdd(log);
-                                    }
+                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 600, UserID = settings.UserID, Note = output };
+                                    await _repository.ListingLogAdd(log);
+
                                     listing.Qty = newListedQty;
                                     await _repository.ListingSaveAsync(settings, listing, false, "Qty", "ListingPrice");
                                 }
@@ -456,6 +455,7 @@ namespace wm
                                     string note = "db supplier price " + listing.SupplierItem.SupplierPrice.Value.ToString("c") + " different from just captured " + wmItem.SupplierPrice.Value.ToString("c");
                                     priceChangeList.Add(str);
 
+                                    Console.WriteLine("Price change.");
                                     if (wmItem.SupplierPrice < listing.SupplierItem.SupplierPrice)
                                     {
                                         str = "Supplier dropped their price.";
@@ -556,7 +556,6 @@ namespace wm
                     {
                         SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY NOT AVAILABLE ", shipNotAvailList);
                     }
-                   
                     if (deliveryTooLong > 0)
                     {
                         SendAlertEmail(_toEmail, settings.StoreName + " DELIVERY TOO LONG ", deliveryTooLongList);
@@ -583,29 +582,6 @@ namespace wm
                 dsutil.DSUtil.WriteFile(logfile, msg, "");
                 throw;
             }
-        }
-
-        protected static bool InStockLongEnough_orig(int listingID, int daysLookBack)
-        {
-            var back = DateTime.Now.AddDays(-daysLookBack);
-            var items = _repository.Context.ListingLogs.Where(p => p.Created > back && p.ListingID == listingID).ToList();
-
-            bool putBackInStock = true;
-            if (items.Count >= daysLookBack * 24)       // need at least hourly scan for a day
-            {
-                foreach (var i in items)
-                {
-                    if (i.MsgID != 600 || i.MsgID != 700)
-                    {
-                        putBackInStock = false;
-                    }
-                }
-            }
-            else
-            {
-                putBackInStock = false;
-            }
-            return putBackInStock;
         }
 
         /// <summary>
