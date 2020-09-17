@@ -220,25 +220,7 @@ namespace wm
                         if (wmItem == null)  // could not fetch from walmart website
                         {
                             ++invalidURL;
-                            invalidURLList.Add(listing.ListingTitle);
-                            invalidURLList.Add(listing.SupplierItem.ItemURL);
-                            invalidURLList.Add(string.Format("Qty was {0}", listing.Qty));
-                            invalidURLList.Add(string.Empty);
-
-                            int cnt = CountMsgID(listing.ID, 500, daysBack);
-                            int total = CountMsgID(listing.ID, 0, daysBack);
-                            invalidURLList.Add(string.Format("Invalid URL: {0}/{1}", cnt, total));
-                            invalidURLList.Add(string.Empty);
-
-                            var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
-                            await _repository.ListingLogAdd(log);
-
-                            if (listing.Qty > 0)
-                            {
-                                listing.Qty = 0;
-                                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                            }
+                            await InvalidURL(settings, listing, invalidURLList, token, daysBack, response);
                         }
                         else
                         {
@@ -276,7 +258,6 @@ namespace wm
                                     await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }
-
                                 var log = new ListingLog { ListingID = listing.ID, MsgID = 1100, UserID = settings.UserID };
                                 await _repository.ListingLogAdd(log);
                             }
@@ -292,15 +273,14 @@ namespace wm
                                 shipNotAvailList.Add(string.Format("Delivery not available: {0}/{1}", cnt, total));
                                 shipNotAvailList.Add(string.Empty);
 
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
-
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
                                     await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
+                                await _repository.ListingLogAdd(log);
                             }
                             if (!wmItem.ShippingNotAvailable && wmItem.OutOfStock)
                             {
@@ -309,25 +289,21 @@ namespace wm
                                 outofStockList.Add(listing.SupplierItem.ItemURL);
                                 outofStockList.Add(string.Empty);
 
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
-
                                 if (listing.Qty > 0)
                                 {
                                     listing.Qty = 0;
                                     await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
+                                await _repository.ListingLogAdd(log);
                             }
                             if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
                             {
                                 ++outofstockBadArrivalDate;
                                 outofStockBadArrivalList.Add(listing.ListingTitle);
                                 outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
-                                outofStockBadArrivalList.Add(string.Empty);
-                                
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
+                                outofStockBadArrivalList.Add(string.Empty);                                
 
                                 if (listing.Qty > 0)
                                 {
@@ -335,6 +311,8 @@ namespace wm
                                     await _repository.ListingSaveAsync(settings, listing, false, "Qty");
                                     response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
                                 }
+                                var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
+                                await _repository.ListingLogAdd(log);
                             }
                             bool lateDelivery = false;
                             if (wmItem.Arrives.HasValue)
@@ -583,7 +561,27 @@ namespace wm
                 throw;
             }
         }
+        private static async Task InvalidURL(UserSettingsView settings, Listing listing, List<string> invalidURLList, string token, int daysBack, List<string> response)
+        {
+            invalidURLList.Add(listing.ListingTitle);
+            invalidURLList.Add(listing.SupplierItem.ItemURL);
+            invalidURLList.Add(string.Format("Qty was {0}", listing.Qty));
+            invalidURLList.Add(string.Empty);
 
+            int cnt = CountMsgID(listing.ID, 500, daysBack);
+            int total = CountMsgID(listing.ID, 0, daysBack);
+            invalidURLList.Add(string.Format("Invalid URL: {0}/{1}", cnt, total));
+            invalidURLList.Add(string.Empty);
+
+            if (listing.Qty > 0)
+            {
+                listing.Qty = 0;
+                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
+                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+            }
+            var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
+            await _repository.ListingLogAdd(log);
+        }
         /// <summary>
         /// Called if trying to put an item back in stock.
         /// </summary>
