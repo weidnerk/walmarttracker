@@ -227,92 +227,27 @@ namespace wm
                             if (wmItem.ArrivalDateFlag == 1 || wmItem.ArrivalDateFlag == 2)
                             {
                                 ++parseArrivalDate;
-                                parseArrivalDateList.Add(listing.ListingTitle);
-                                parseArrivalDateList.Add(listing.SupplierItem.ItemURL);
-                                parseArrivalDateList.Add(string.Format("Code: {0}", wmItem.ArrivalDateFlag));
-                                parseArrivalDateList.Add(string.Empty);
-
-                                int cnt = CountMsgID(listing.ID, 1000, daysBack);
-                                int total = CountMsgID(listing.ID, 0, daysBack);
-                                parseArrivalDateList.Add(string.Format("Parse arrival date: {0}/{1}", cnt, total));
-                                parseArrivalDateList.Add(string.Empty);
-
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 1000, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
+                                await ParseArrivalDate(settings, listing, parseArrivalDateList, token, daysBack, response, wmItem);
                             }
                             if (!wmItem.SoldAndShippedBySupplier ?? false)
                             {
                                 ++notWalmart;
-                                notWalmartList.Add(listing.ListingTitle);
-                                notWalmartList.Add(listing.SupplierItem.ItemURL);
-                                notWalmartList.Add(string.Empty);
-
-                                int cnt = CountMsgID(listing.ID, 1100, daysBack);
-                                int total = CountMsgID(listing.ID, 0, daysBack);
-                                notWalmartList.Add(string.Format("Not Walmart: {0}/{1}", cnt, total));
-                                notWalmartList.Add(string.Empty);
-
-                                if (listing.Qty > 0)
-                                {
-                                    listing.Qty = 0;
-                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                }
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 1100, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
+                                await NotWalmart(settings, listing, notWalmartList, token, daysBack, response);
                             }
                             if (wmItem.ShippingNotAvailable)
                             {
                                 ++shippingNotAvailable;
-                                shipNotAvailList.Add(listing.ListingTitle);
-                                shipNotAvailList.Add(listing.SupplierItem.ItemURL);
-                                shipNotAvailList.Add(string.Empty);
-
-                                int cnt = CountMsgID(listing.ID, 400, daysBack);
-                                int total = CountMsgID(listing.ID, 0, daysBack);
-                                shipNotAvailList.Add(string.Format("Delivery not available: {0}/{1}", cnt, total));
-                                shipNotAvailList.Add(string.Empty);
-
-                                if (listing.Qty > 0)
-                                {
-                                    listing.Qty = 0;
-                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                }
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
+                                await ShipNotAvailable(settings, listing, shipNotAvailList, token, daysBack, response);
                             }
                             if (!wmItem.ShippingNotAvailable && wmItem.OutOfStock)
                             {
                                 ++outofstock;
-                                outofStockList.Add(listing.ListingTitle);
-                                outofStockList.Add(listing.SupplierItem.ItemURL);
-                                outofStockList.Add(string.Empty);
-
-                                if (listing.Qty > 0)
-                                {
-                                    listing.Qty = 0;
-                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                }
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
+                                await OutOfStock(settings, listing, outofStockList, token, daysBack, response);
                             }
                             if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
                             {
                                 ++outofstockBadArrivalDate;
-                                outofStockBadArrivalList.Add(listing.ListingTitle);
-                                outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
-                                outofStockBadArrivalList.Add(string.Empty);                                
-
-                                if (listing.Qty > 0)
-                                {
-                                    listing.Qty = 0;
-                                    await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                                    response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                }
-                                var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
-                                await _repository.ListingLogAdd(log);
+                                await OutOfStockBadArrivalDate(settings, listing, outofStockBadArrivalList, token, daysBack, response);
                             }
                             bool lateDelivery = false;
                             if (wmItem.Arrives.HasValue)
@@ -582,6 +517,92 @@ namespace wm
             var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
             await _repository.ListingLogAdd(log);
         }
+        private static async Task OutOfStock(UserSettingsView settings, Listing listing, List<string> outofStockList, string token, int daysBack, List<string> response)
+        {
+            outofStockList.Add(listing.ListingTitle);
+            outofStockList.Add(listing.SupplierItem.ItemURL);
+            outofStockList.Add(string.Empty);
+
+            if (listing.Qty > 0)
+            {
+                listing.Qty = 0;
+                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
+                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+            }
+            var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
+            await _repository.ListingLogAdd(log);
+        }
+        private static async Task OutOfStockBadArrivalDate(UserSettingsView settings, Listing listing, List<string> outofStockBadArrivalList, string token, int daysBack, List<string> response)
+        {
+            outofStockBadArrivalList.Add(listing.ListingTitle);
+            outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
+            outofStockBadArrivalList.Add(string.Empty);
+
+            if (listing.Qty > 0)
+            {
+                listing.Qty = 0;
+                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
+                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+            }
+            var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
+            await _repository.ListingLogAdd(log);
+        }
+        private static async Task ShipNotAvailable(UserSettingsView settings, Listing listing, List<string> shipNotAvailList, string token, int daysBack, List<string> response)
+        {
+            shipNotAvailList.Add(listing.ListingTitle);
+            shipNotAvailList.Add(listing.SupplierItem.ItemURL);
+            shipNotAvailList.Add(string.Empty);
+
+            int cnt = CountMsgID(listing.ID, 400, daysBack);
+            int total = CountMsgID(listing.ID, 0, daysBack);
+            shipNotAvailList.Add(string.Format("Delivery not available: {0}/{1}", cnt, total));
+            shipNotAvailList.Add(string.Empty);
+
+            if (listing.Qty > 0)
+            {
+                listing.Qty = 0;
+                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
+                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+            }
+            var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
+            await _repository.ListingLogAdd(log);
+        }
+        private static async Task NotWalmart(UserSettingsView settings, Listing listing, List<string> notWalmartList, string token, int daysBack, List<string> response)
+        {
+            notWalmartList.Add(listing.ListingTitle);
+            notWalmartList.Add(listing.SupplierItem.ItemURL);
+            notWalmartList.Add(string.Empty);
+
+            int cnt = CountMsgID(listing.ID, 1100, daysBack);
+            int total = CountMsgID(listing.ID, 0, daysBack);
+            notWalmartList.Add(string.Format("Not Walmart: {0}/{1}", cnt, total));
+            notWalmartList.Add(string.Empty);
+
+            if (listing.Qty > 0)
+            {
+                listing.Qty = 0;
+                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
+                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+            }
+            var log = new ListingLog { ListingID = listing.ID, MsgID = 1100, UserID = settings.UserID };
+            await _repository.ListingLogAdd(log);
+        }
+        private static async Task ParseArrivalDate(UserSettingsView settings, Listing listing, List<string> parseArrivalDateList, string token, int daysBack, List<string> response, ISupplierItem wmItem)
+        {
+            parseArrivalDateList.Add(listing.ListingTitle);
+            parseArrivalDateList.Add(listing.SupplierItem.ItemURL);
+            parseArrivalDateList.Add(string.Format("Code: {0}", wmItem.ArrivalDateFlag));
+            parseArrivalDateList.Add(string.Empty);
+
+            int cnt = CountMsgID(listing.ID, 1000, daysBack);
+            int total = CountMsgID(listing.ID, 0, daysBack);
+            parseArrivalDateList.Add(string.Format("Parse arrival date: {0}/{1}", cnt, total));
+            parseArrivalDateList.Add(string.Empty);
+
+            var log = new ListingLog { ListingID = listing.ID, MsgID = 1000, UserID = settings.UserID };
+            await _repository.ListingLogAdd(log);
+        }
+
         /// <summary>
         /// Called if trying to put an item back in stock.
         /// </summary>
