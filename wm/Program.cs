@@ -210,7 +210,7 @@ namespace wm
 
                         listingID = listing.ID;
 
-                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Briggs-Stratton-8-Gallon-Hotdog-Oil-free-Air-Compressor/800727967")
+                        //if (listing.SupplierItem.ItemURL != "https://www.walmart.com/ip/Classic-Sport-Premier-Cup-II-Foosball-Table-Brown-Official-Competition-Size/592871184")
                         //{
                         //    continue;
                         //}
@@ -220,34 +220,34 @@ namespace wm
                         if (wmItem == null)  // could not fetch from walmart website
                         {
                             ++invalidURL;
-                            await InvalidURL(settings, listing, invalidURLList, token, daysBack, response);
+                            await InvalidURLAsync(settings, listing, invalidURLList, token, daysBack, response);
                         }
                         else
                         {
                             if (wmItem.ArrivalDateFlag == 1 || wmItem.ArrivalDateFlag == 2)
                             {
                                 ++parseArrivalDate;
-                                await ParseArrivalDate(settings, listing, parseArrivalDateList, token, daysBack, response, wmItem);
+                                await ParseArrivalDateAsync(settings, listing, parseArrivalDateList, token, daysBack, response, wmItem);
                             }
                             if (!wmItem.SoldAndShippedBySupplier ?? false)
                             {
                                 ++notWalmart;
-                                await NotWalmart(settings, listing, notWalmartList, token, daysBack, response);
+                                await NotWalmartAsync(settings, listing, notWalmartList, token, daysBack, response);
                             }
                             if (wmItem.ShippingNotAvailable)
                             {
                                 ++shippingNotAvailable;
-                                await ShipNotAvailable(settings, listing, shipNotAvailList, token, daysBack, response);
+                                await ShipNotAvailableAsync(settings, listing, shipNotAvailList, token, daysBack, response);
                             }
                             if (!wmItem.ShippingNotAvailable && wmItem.OutOfStock)
                             {
                                 ++outofstock;
-                                await OutOfStock(settings, listing, outofStockList, token, daysBack, response);
+                                await OutOfStockAsync(settings, listing, outofStockList, token, daysBack, response);
                             }
                             if (!wmItem.OutOfStock && !wmItem.ShippingNotAvailable && !wmItem.Arrives.HasValue)
                             {
                                 ++outofstockBadArrivalDate;
-                                await OutOfStockBadArrivalDate(settings, listing, outofStockBadArrivalList, token, daysBack, response);
+                                await OutOfStockBadArrivalDateAsync(settings, listing, outofStockBadArrivalList, token, daysBack, response);
                             }
                             bool lateDelivery = false;
                             if (wmItem.Arrives.HasValue)
@@ -257,29 +257,7 @@ namespace wm
                                 {
                                     lateDelivery = true;
                                     ++deliveryTooLong;
-                                    deliveryTooLongList.Add(listing.ListingTitle);
-                                    deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
-                                    deliveryTooLongList.Add(string.Format("{0} business days, over by {1} day(s)", days, days - allowedDeliveryDays));
-                                    var note = string.Format("{0} days", days);
-                                    deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
-                                    note += string.Format(" (Qty was {0})", listing.Qty);
-                                    deliveryTooLongList.Add(string.Empty);
-
-                                    int cnt = CountMsgID(listing.ID, 100, daysBack);
-                                    int total = CountMsgID(listing.ID, 0, daysBack);
-                                    deliveryTooLongList.Add(string.Format("Delivery too long: {0}/{1}", cnt, total));
-                                    deliveryTooLongList.Add(string.Empty);
-
-                                    note += string.Format(" (Qty was {0})", listing.Qty);
-                                    var log = new ListingLog { ListingID = listing.ID, MsgID = 100, Note = note, UserID = settings.UserID };
-                                    await _repository.ListingLogAdd(log);
-
-                                    if (listing.Qty > 0)
-                                    {
-                                        listing.Qty = 0;
-                                        await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                                        response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
-                                    }
+                                    await DeliveryTooLongAsync(settings, listing, deliveryTooLongList, token, daysBack, response, days, allowedDeliveryDays);
                                 }
                             }
 
@@ -413,7 +391,15 @@ namespace wm
                         {
                             listing.Qty = 0;
                             await _repository.ListingSaveAsync(settings, listing, false, "Qty");
-                            response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                            try
+                            {
+                                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+                            } 
+                            catch
+                            {
+                                // Utility.eBayItem.ReviseItem() will log and throw its exception but we don't want to leave the for loop
+                                // so just swallow the error here
+                            }
                         }
                     }
                 }   // end for loop
@@ -496,7 +482,33 @@ namespace wm
                 throw;
             }
         }
-        private static async Task InvalidURL(UserSettingsView settings, Listing listing, List<string> invalidURLList, string token, int daysBack, List<string> response)
+        private static async Task DeliveryTooLongAsync(UserSettingsView settings, Listing listing, List<string> deliveryTooLongList, string token, int daysBack, List<string> response, int days, int allowedDeliveryDays)
+        {
+            deliveryTooLongList.Add(listing.ListingTitle);
+            deliveryTooLongList.Add(listing.SupplierItem.ItemURL);
+            deliveryTooLongList.Add(string.Format("{0} business days, over by {1} day(s)", days, days - allowedDeliveryDays));
+            var note = string.Format("{0} days", days);
+            deliveryTooLongList.Add(string.Format("Qty was {0}", listing.Qty));
+            note += string.Format(" (Qty was {0})", listing.Qty);
+            deliveryTooLongList.Add(string.Empty);
+
+            int cnt = CountMsgID(listing.ID, 100, daysBack);
+            int total = CountMsgID(listing.ID, 0, daysBack);
+            deliveryTooLongList.Add(string.Format("Delivery too long: {0}/{1}", cnt, total));
+            deliveryTooLongList.Add(string.Empty);
+
+            note += string.Format(" (Qty was {0})", listing.Qty);
+            var log = new ListingLog { ListingID = listing.ID, MsgID = 100, Note = note, UserID = settings.UserID };
+            await _repository.ListingLogAdd(log);
+
+            if (listing.Qty > 0)
+            {
+                listing.Qty = 0;
+                await _repository.ListingSaveAsync(settings, listing, false, "Qty");
+                response = Utility.eBayItem.ReviseItem(token, listing.ListedItemID, qty: 0);
+            }
+        }
+        private static async Task InvalidURLAsync(UserSettingsView settings, Listing listing, List<string> invalidURLList, string token, int daysBack, List<string> response)
         {
             invalidURLList.Add(listing.ListingTitle);
             invalidURLList.Add(listing.SupplierItem.ItemURL);
@@ -517,7 +529,7 @@ namespace wm
             var log = new ListingLog { ListingID = listing.ID, MsgID = 500, UserID = settings.UserID };
             await _repository.ListingLogAdd(log);
         }
-        private static async Task OutOfStock(UserSettingsView settings, Listing listing, List<string> outofStockList, string token, int daysBack, List<string> response)
+        private static async Task OutOfStockAsync(UserSettingsView settings, Listing listing, List<string> outofStockList, string token, int daysBack, List<string> response)
         {
             outofStockList.Add(listing.ListingTitle);
             outofStockList.Add(listing.SupplierItem.ItemURL);
@@ -532,7 +544,7 @@ namespace wm
             var log = new ListingLog { ListingID = listing.ID, MsgID = 300, UserID = settings.UserID };
             await _repository.ListingLogAdd(log);
         }
-        private static async Task OutOfStockBadArrivalDate(UserSettingsView settings, Listing listing, List<string> outofStockBadArrivalList, string token, int daysBack, List<string> response)
+        private static async Task OutOfStockBadArrivalDateAsync(UserSettingsView settings, Listing listing, List<string> outofStockBadArrivalList, string token, int daysBack, List<string> response)
         {
             outofStockBadArrivalList.Add(listing.ListingTitle);
             outofStockBadArrivalList.Add(listing.SupplierItem.ItemURL);
@@ -547,7 +559,7 @@ namespace wm
             var log = new ListingLog { ListingID = listing.ID, MsgID = 200, UserID = settings.UserID };
             await _repository.ListingLogAdd(log);
         }
-        private static async Task ShipNotAvailable(UserSettingsView settings, Listing listing, List<string> shipNotAvailList, string token, int daysBack, List<string> response)
+        private static async Task ShipNotAvailableAsync(UserSettingsView settings, Listing listing, List<string> shipNotAvailList, string token, int daysBack, List<string> response)
         {
             shipNotAvailList.Add(listing.ListingTitle);
             shipNotAvailList.Add(listing.SupplierItem.ItemURL);
@@ -567,7 +579,7 @@ namespace wm
             var log = new ListingLog { ListingID = listing.ID, MsgID = 400, UserID = settings.UserID };
             await _repository.ListingLogAdd(log);
         }
-        private static async Task NotWalmart(UserSettingsView settings, Listing listing, List<string> notWalmartList, string token, int daysBack, List<string> response)
+        private static async Task NotWalmartAsync(UserSettingsView settings, Listing listing, List<string> notWalmartList, string token, int daysBack, List<string> response)
         {
             notWalmartList.Add(listing.ListingTitle);
             notWalmartList.Add(listing.SupplierItem.ItemURL);
@@ -587,7 +599,7 @@ namespace wm
             var log = new ListingLog { ListingID = listing.ID, MsgID = 1100, UserID = settings.UserID };
             await _repository.ListingLogAdd(log);
         }
-        private static async Task ParseArrivalDate(UserSettingsView settings, Listing listing, List<string> parseArrivalDateList, string token, int daysBack, List<string> response, ISupplierItem wmItem)
+        private static async Task ParseArrivalDateAsync(UserSettingsView settings, Listing listing, List<string> parseArrivalDateList, string token, int daysBack, List<string> response, ISupplierItem wmItem)
         {
             parseArrivalDateList.Add(listing.ListingTitle);
             parseArrivalDateList.Add(listing.SupplierItem.ItemURL);
